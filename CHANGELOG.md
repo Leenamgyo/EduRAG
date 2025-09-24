@@ -9,6 +9,11 @@
 ### 추가됨
 - 로컬 개발 환경에서 분석 리포트를 저장할 수 있도록 Elasticsearch용 Docker Compose 서비스를 추가했습니다.
 - 각 서버를 빠르게 실행할 수 있는 `scripts/` 디렉터리와 실행 스크립트를 추가했습니다.
+- Miner 검색 및 에이전트 실행 결과를 `MINER_DATABASE_URL`을 통해 PostgreSQL에 기록하고 실행 ID와 크롤링된 청크를 함께 보관할 수 있도록 했습니다.
+- Tavily 검색 시 Gemini 관련 질의 생성을 위한 프롬프트를 `--search-ai-prompt` 옵션과 `MINER_SEARCH_AI_PROMPT` 환경 변수로 커스터마이징할 수 있게 했습니다.
+
+### 변경됨
+- Tavily 검색 결과 중 YouTube 계열 도메인은 자동 크롤링 대상에서 제외해 저작권 이슈를 예방합니다.
 
 ## [0.1.0] - 2025-09-24
 
