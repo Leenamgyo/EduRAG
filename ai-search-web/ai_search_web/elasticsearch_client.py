@@ -12,6 +12,14 @@ class ElasticsearchConfigurationError(RuntimeError):
     """Raised when the Elasticsearch connection has not been configured."""
 
 
+def _build_endpoint(host: str, scheme: str) -> str:
+    if host.startswith("http://") or host.startswith("https://"):
+        return host
+
+    sanitized = host.lstrip("/")
+    return f"{scheme}://{sanitized}"
+
+
 @lru_cache(maxsize=1)
 def get_client() -> Elasticsearch:
     host = settings.es_host
@@ -20,14 +28,12 @@ def get_client() -> Elasticsearch:
             "Elasticsearch host is not configured. Set the ES_HOST environment variable."
         )
 
-    # localhost일 경우 https → http 제거
-    if "localhost" in host or "127.0.0.1" in host:
-        host = host.replace("https://", "").replace("http://", "")
+    endpoint = _build_endpoint(host, settings.es_scheme)
 
     username: Optional[str] = settings.es_username
     password: Optional[str] = settings.es_password
 
     if username and password:
-        return Elasticsearch(hosts=[host], basic_auth=(username, password))
+        return Elasticsearch(hosts=[endpoint], basic_auth=(username, password))
 
-    return Elasticsearch(hosts=[host])
+    return Elasticsearch(hosts=[endpoint])
