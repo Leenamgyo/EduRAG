@@ -14,6 +14,16 @@ except Exception:  # pragma: no cover - optional at runtime.
 
 DEFAULT_MODEL = "gemini-1.5-flash"
 
+DEFAULT_RELATED_QUERY_PROMPT = """
+당신은 교육 및 학습 도메인에서 활용할 RAG 데이터베이스를 구축하는 정보 검색 전략가입니다.
+기준 검색어를 다양한 관점에서 확장하여 수집할 가치가 높은 관련 검색어 후보를 제안하세요.
+각 검색어는 실질적인 조사 주제가 되도록 12자 이상 48자 이하의 구체적인 표현으로 작성합니다.
+검색어는 번호나 불릿 없이 한 줄에 하나씩만 작성하며, 한국어와 영어를 혼합해도 괜찮습니다.
+기준 검색어: {seed_query}
+{context_block}
+최대 {limit}개의 검색어만 반환하세요.
+"""
+
 
 class GeminiUnavailableError(RuntimeError):
     """Raised when Gemini is requested but dependencies or keys are missing."""
@@ -42,6 +52,32 @@ def _coerce_lines(text: str) -> List[str]:
     return lines
 
 
+def _build_related_prompt(
+    seed_query: str,
+    *,
+    limit: int,
+    context_samples: Sequence[str] | None,
+    prompt_template: str | None,
+) -> str:
+    template = (
+        prompt_template
+        or os.getenv("MINER_GEMINI_RELATED_PROMPT")
+        or DEFAULT_RELATED_QUERY_PROMPT
+    )
+
+    context_block = ""
+    if context_samples:
+        formatted = "\n".join(context_samples[: 2 * limit])
+        if formatted:
+            context_block = "\n참고 문맥:\n" + formatted
+
+    return template.format(
+        seed_query=seed_query.strip(),
+        limit=limit,
+        context_block=context_block,
+    )
+
+
 def generate_related_queries(
     seed_query: str,
     *,
@@ -49,6 +85,7 @@ def generate_related_queries(
     model: str | None = None,
     context_samples: Sequence[str] | None = None,
     api_key: str | None = None,
+    prompt_template: str | None = None,
 ) -> List[str]:
     """Use Gemini to generate a list of related search queries."""
 
@@ -62,20 +99,12 @@ def generate_related_queries(
     except GeminiUnavailableError:
         return []
 
-    prompt_sections: List[str] = [
-        "당신은 검색 전략을 설계하는 전문가입니다.",
-        "다음의 기준 검색어를 확장하여 서로 다른 각도로 접근할 수 있는 관련 검색어를 만들어 주세요.",
-        "출력 형식은 번호 없이 한 줄당 하나의 검색어만 포함하도록 하세요.",
-        f"기준 검색어: {seed_query.strip()}",
-    ]
-
-    if context_samples:
-        formatted_context = "\n".join(context_samples[: 2 * limit])
-        prompt_sections.append("참고 문맥:\n" + formatted_context)
-
-    prompt_sections.append(f"최대 {limit}개의 검색어를 반환하세요.")
-
-    prompt = "\n\n".join(prompt_sections)
+    prompt = _build_related_prompt(
+        seed_query,
+        limit=limit,
+        context_samples=context_samples,
+        prompt_template=prompt_template,
+    )
 
     try:
         model_client = genai.GenerativeModel(chosen_model)

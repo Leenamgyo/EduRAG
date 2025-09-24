@@ -206,6 +206,7 @@ def run_agent(
     crawl_limit: int = 5,
     results_per_query: int = 5,
     ai_model: str | None = None,
+    ai_prompt: str | None = None,
     chunk_size: int = 500,
     embedding_model: str | None = None,
     embedding_model_secondary: str | None = None,
@@ -225,6 +226,7 @@ def run_agent(
         crawl_limit=crawl_limit,
         results_per_query=results_per_query,
         ai_model=ai_model,
+        ai_prompt=ai_prompt,
         chunk_size=chunk_size,
     )
 

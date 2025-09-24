@@ -103,6 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Gemini model identifier used for related query expansion.",
     )
     parser.add_argument(
+        "--search-ai-prompt",
+        default=os.getenv("MINER_SEARCH_AI_PROMPT"),
+        help="Custom prompt template for Gemini related query generation.",
+    )
+    parser.add_argument(
         "--search-chunk-size",
         type=int,
         default=int(os.getenv("MINER_SEARCH_CHUNK_SIZE", "500")),
@@ -143,6 +148,7 @@ def main(args: list[str] | None = None) -> None:
                 crawl_limit=parsed.search_crawl_limit,
                 results_per_query=parsed.search_results_per_query,
                 ai_model=parsed.search_ai_model,
+                ai_prompt=parsed.search_ai_prompt,
                 chunk_size=parsed.search_chunk_size,
             )
         except ValueError as exc:
@@ -170,6 +176,7 @@ def main(args: list[str] | None = None) -> None:
                 crawl_limit=parsed.search_crawl_limit,
                 results_per_query=parsed.search_results_per_query,
                 ai_model=parsed.search_ai_model,
+                ai_prompt=parsed.search_ai_prompt,
                 chunk_size=parsed.search_chunk_size,
                 embedding_model=parsed.agent_embedding_model,
                 embedding_model_secondary=parsed.agent_embedding_model_secondary,
