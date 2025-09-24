@@ -4,6 +4,11 @@
 
 변경 로그 형식은 Keep a Changelog(https://keepachangelog.com/ko/1.1.0/)를 참고하며, 프로젝트는 Semantic Versioning(https://semver.org/lang/ko/)을 준수합니다.
 
+## [Unreleased]
+
+### 추가됨
+- 로컬 개발 환경에서 분석 리포트를 저장할 수 있도록 Elasticsearch용 Docker Compose 서비스를 추가했습니다.
+
 ## [0.1.0] - 2025-09-24
 
 ### 변경됨
