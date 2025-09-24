@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Iterable, List, Mapping
 
 import requests
+from langchain_core.tools import tool
 
 LOGGER = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ def _call_semantic_scholar(
     return mapping
 
 
+@tool
 def fetch_top_cited_papers(
     keyword: str,
     *,
@@ -140,19 +142,18 @@ def fetch_top_cited_papers(
     verify_with_semantic_scholar: bool = True,
     timeout: float = 15.0,
 ) -> List[Paper]:
-    """Return the top cited papers for ``keyword``.
+    """OpenAlex와 Semantic Scholar를 조회해 인용 수가 높은 논문 목록을 반환합니다.
 
-    Parameters
-    ----------
-    keyword:
-        User supplied search keyword used in both API calls.
-    limit:
-        Maximum number of papers to include in the result set.
-    verify_with_semantic_scholar:
-        When ``True`` the function will call the Semantic Scholar API and use
-        the returned citation counts when the titles match.
-    timeout:
-        Timeout in seconds applied to both HTTP requests.
+    Args:
+        keyword: 논문 제목 또는 주제를 설명하는 검색 키워드.
+        limit: 반환할 최대 논문 수.
+        verify_with_semantic_scholar: ``True``이면 Semantic Scholar를 함께 조회하여
+            인용 수를 교차 검증합니다.
+        timeout: 각 HTTP 요청에 적용할 타임아웃(초).
+
+    Returns:
+        ``Paper`` 데이터 클래스 목록으로, 제목·발행연도·인용 수·DOI/URL 정보를
+        포함합니다.
     """
 
     if limit <= 0:
@@ -208,8 +209,9 @@ def _format_table_rows(papers: Iterable[Paper]) -> list[list[str]]:
     return [[paper.title, paper.year, paper.citations, paper.doi_or_url] for paper in papers]
 
 
+@tool
 def format_papers_table(papers: Iterable[Paper]) -> str:
-    """Format papers as a Markdown table."""
+    """논문 목록을 Markdown 표 형태의 문자열로 변환합니다."""
 
     rows = _format_table_rows(papers)
 
