@@ -17,6 +17,11 @@ from .storage.minio import (
     store_agent_chunks,
     create_client as create_minio_client,
 )
+from .top_cited import (
+    Paper,
+    fetch_top_cited_papers,
+    format_papers_table,
+)
 
 __all__ = [
     "SearchRequest",
@@ -32,4 +37,7 @@ __all__ = [
     "ensure_bucket",
     "store_agent_chunks",
     "load_agent_chunks",
+    "Paper",
+    "fetch_top_cited_papers",
+    "format_papers_table",
 ]
