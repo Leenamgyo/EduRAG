@@ -13,6 +13,24 @@ Miner는 RAG(Retrieval-Augmented Generation) 저장소를 생성하기 위한 �
 uv run python -m miner.main --help
 ```
 
+### Tavily 기반 검색 모드 활용하기
+
+AI-SEARCH 프로젝트에서 사용하던 다국어 Tavily 검색 전략을 Miner에도 도입했습니다.
+`--mode search`와 `--search-query` 옵션을 사용하면 교육·학술 분야에 특화된 웹 검색을
+실행해 수집할 만한 문서를 빠르게 파악할 수 있습니다. 검색 결과는 중복 URL을 제거한
+마크다운 형식으로 출력됩니다.
+
+```bash
+export TAVILY_API_KEY=...  # Tavily API 키 필요
+
+uv run python -m miner.main \
+  --mode search \
+  --search-query "디지털 교육 정책 동향"
+```
+
+검색 모드는 Tavily API 사용량에 따라 비용이 발생할 수 있으며, `deep-translator`
+패키지가 설치되어 있다면 쿼리를 영어로 번역해 글로벌 검색도 함께 수행합니다.
+
 ## Qdrant 벡터 DB 실행하기
 Miner는 [Qdrant](https://qdrant.tech/)를 기본 벡터 데이터베이스로 사용합니다. 저장소 루트에 있는 `docker-compose.yml`을 사용하여 손쉽게 로컬 개발용 인스턴스를 실행할 수 있습니다.
 
