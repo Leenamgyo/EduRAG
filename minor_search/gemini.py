@@ -1,4 +1,4 @@
-﻿"""Gemini helper utilities for Miner search workflows."""
+﻿"""Gemini helper utilities for Minor search workflows."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Miner package exposing utilities for embedding and vector storage."""
+"""Minor package exposing utilities for embedding and vector storage."""
 
 from .agent import AgentConfigurationError, AgentRunSummary, run_agent
 from .docmodel import DocModel, build_docmodels

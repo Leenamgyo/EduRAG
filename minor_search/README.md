@@ -1,6 +1,6 @@
 # Minor Search
 
-Minor Search는 Tavily 검색과 Gemini 기반 관련 질의 생성을 조합해 교육·학습 도메인에 특화된 정보를 수집하는 프로젝트입니다. 실행 결과는 마크다운 요약과 함께 에이전트 친화적인 청크 리스트로 반환되며, MinIO에 저장해 Miner 에이전트에서 임베딩 파이프라인의 입력으로 사용할 수 있습니다.
+Minor Search는 Tavily 검색과 Gemini 기반 관련 질의 생성을 조합해 교육·학습 도메인에 특화된 정보를 수집하는 프로젝트입니다. 실행 결과는 마크다운 요약과 함께 에이전트 친화적인 청크 리스트로 반환되며, MinIO에 저장해 Minor 에이전트에서 임베딩 파이프라인의 입력으로 사용할 수 있습니다.
 
 ## 요구 사항
 - [uv](https://github.com/astral-sh/uv) 0.5.0 이상
@@ -45,10 +45,10 @@ MinIO에 저장되는 객체는 JSON 포맷이며 다음 정보를 포함합니�
 - `chunks`: URL, 제목, 청크 본문 등 에이전트가 사용할 수 있는 데이터 목록
 - `failures`: 크롤링 실패 내역
 
-이 JSON은 Miner 프로젝트의 `miner.main --mode agent` 명령에서 `--search-object` 옵션으로 불러와 임베딩 파이프라인을 실행할 수 있습니다.
+이 JSON은 Minor 프로젝트의 `minor.main --mode agent` 명령에서 `--search-object` 옵션으로 불러와 임베딩 파이프라인을 실행할 수 있습니다.
 
 ## 디버그 모드
 기본적으로 Minor Search는 디버그 로그를 활성화합니다. `--no-debug` 옵션 또는 `MINOR_SEARCH_DEBUG=0` 환경 변수를 사용하여 비활성화할 수 있습니다.
 
-## PostgreSQL 실행 로그
-`MINER_DATABASE_URL` 환경 변수를 지정하면 기존 Miner와 동일하게 PostgreSQL에 실행 요약과 청크 세부 정보를 기록합니다.
+## 실행 로그 연동
+Minor Search에서 반환한 `SearchRunResult`는 `minor.logbook.log_search_run` 함수를 통해 JSON Lines 파일로 기록할 수 있습니다. `MINOR_LOG_PATH` 환경 변수를 사용하면 Minor와 동일한 경로를 공유하도록 설정할 수 있습니다.

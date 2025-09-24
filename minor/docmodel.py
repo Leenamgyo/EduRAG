@@ -1,4 +1,4 @@
-"""DocModel helpers for Miner agent outputs."""
+"""DocModel helpers for Minor agent outputs."""
 
 from __future__ import annotations
 

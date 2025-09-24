@@ -65,7 +65,7 @@ def load_settings() -> Settings:
         qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
         qdrant_port=_int_env("QDRANT_PORT", 6333),
         qdrant_api_key=os.getenv("QDRANT_API_KEY"),
-        qdrant_collection=os.getenv("QDRANT_COLLECTION", "miner-documents"),
+        qdrant_collection=os.getenv("QDRANT_COLLECTION", "minor-documents"),
         qdrant_top_k=_int_env("QDRANT_TOP_K", 5),
         qdrant_score_threshold=_float_env("QDRANT_SCORE_THRESHOLD"),
         embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-large"),

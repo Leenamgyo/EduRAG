@@ -7,9 +7,10 @@ from typing import Literal
 
 from qdrant_client.http import models as qmodels
 
-from agent import AgentConfigurationError, run_agent
 from minor_search import MinioSettings, create_minio_client, load_agent_chunks
-from vector_db import VectorCollectionConfig, create_client, ensure_collection
+
+from .agent import AgentConfigurationError, run_agent
+from .vector_db import VectorCollectionConfig, create_client, ensure_collection
 
 DistanceLiteral = Literal["cosine", "dot", "euclid"]
 
@@ -39,7 +40,7 @@ def _configure_logging(debug: bool) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Miner: Qdrant vector database bootstrapper and embedding worker. "
+            "Minor: Qdrant vector database bootstrapper and embedding worker. "
             "Ensures that a collection exists with the requested configuration "
             "and ingests Minor Search results from MinIO."
         )
@@ -62,19 +63,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--collection",
-        default=os.getenv("MINER_COLLECTION", "miner-documents"),
+        default=os.getenv("MINOR_COLLECTION", "minor-documents"),
         help="Name of the collection to ensure.",
     )
     parser.add_argument(
         "--vector-size",
         type=int,
-        default=int(os.getenv("MINER_VECTOR_SIZE", "1536")),
+        default=int(os.getenv("MINOR_VECTOR_SIZE", "1536")),
         help="Dimensionality of the vectors that will be stored.",
     )
     parser.add_argument(
         "--distance",
         choices=list(DISTANCE_MAP),
-        default=os.getenv("MINER_DISTANCE", "cosine"),
+        default=os.getenv("MINOR_DISTANCE", "cosine"),
         help="Distance function used when comparing vectors.",
     )
     parser.add_argument(
@@ -93,15 +94,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--agent-embedding-model",
-        default=os.getenv("MINER_AGENT_EMBEDDING_MODEL", "models/text-embedding-004"),
+        default=os.getenv("MINOR_AGENT_EMBEDDING_MODEL", "models/text-embedding-004"),
         help="Primary Gemini embedding model used when storing chunks in Qdrant.",
     )
     parser.add_argument(
         "--agent-embedding-model-secondary",
-        default=os.getenv("MINER_AGENT_EMBEDDING_MODEL_SECONDARY"),
+        default=os.getenv("MINOR_AGENT_EMBEDDING_MODEL_SECONDARY"),
         help="Optional secondary Gemini embedding model stored alongside the primary vectors.",
     )
-    default_debug = _env_flag("MINER_DEBUG", default=True)
+    default_debug = _env_flag("MINOR_DEBUG", default=True)
     parser.add_argument(
         "--debug",
         dest="debug",
@@ -113,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-debug",
         dest="debug",
         action="store_false",
-        help="Disable debug logging even if MINER_DEBUG is set.",
+        help="Disable debug logging even if MINOR_DEBUG is set.",
     )
 
     default_minio_secure = _env_flag("MINOR_SEARCH_MINIO_SECURE", default=False)

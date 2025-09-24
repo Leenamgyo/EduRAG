@@ -1,6 +1,6 @@
 """Search utilities for discovering new data sources.
 
-This module extends the original Tavily-powered search helpers so that Miner
+This module extends the original Tavily-powered search helpers so that Minor
 can operate as an "AI crawler". Given a seed query the crawler now discovers
 related queries, performs focused searches, and extracts the contents of the
 most relevant results. The aggregated findings are returned in Markdown format
@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 from urllib.parse import urlparse
 
 
-from miner_core import log_search_run
+from minor.logbook import log_search_run
 
 from .gemini import generate_related_queries as gemini_generate
 
@@ -279,7 +279,7 @@ def _resolve_client(api_key: str | None, client: "TavilyClient | None") -> "Tavi
         from tavily import TavilyClient as _TavilyClient  # type: ignore
     except Exception as exc:  # pragma: no cover - import depends on optional dep.
         raise RuntimeError(
-            "tavily-python package is required to run Miner search mode."
+            "tavily-python package is required to run Minor search mode."
         ) from exc
 
     return _TavilyClient(api_key=api_key)

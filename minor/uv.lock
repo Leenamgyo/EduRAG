@@ -549,7 +549,7 @@ wheels = [
 ]
 
 [[package]]
-name = "miner"
+name = "minor"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
