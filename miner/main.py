@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import os
@@ -95,6 +95,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=int(os.getenv("MINER_SEARCH_RESULTS_PER_QUERY", "5")),
         help="Maximum number of top results to keep for each search query.",
     )
+    parser.add_argument(
+        "--search-ai-model",
+        default=os.getenv("MINER_SEARCH_AI_MODEL"),
+        help="Gemini model identifier used for related query expansion.",
+    )
+    parser.add_argument(
+        "--search-chunk-size",
+        type=int,
+        default=int(os.getenv("MINER_SEARCH_CHUNK_SIZE", "500")),
+        help="Character count for each content chunk generated during crawling.",
+    )
     return parser
 
 
@@ -111,12 +122,16 @@ def main(args: list[str] | None = None) -> None:
             parser.error("--search-crawl-limit must be non-negative")
         if parsed.search_results_per_query <= 0:
             parser.error("--search-results-per-query must be greater than zero")
+        if parsed.search_chunk_size <= 0:
+            parser.error("--search-chunk-size must be greater than zero")
         try:
             results = run_search(
                 parsed.search_query,
                 related_limit=parsed.search_related_limit,
                 crawl_limit=parsed.search_crawl_limit,
                 results_per_query=parsed.search_results_per_query,
+                ai_model=parsed.search_ai_model,
+                chunk_size=parsed.search_chunk_size,
             )
         except ValueError as exc:
             parser.error(str(exc))

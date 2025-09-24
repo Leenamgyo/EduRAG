@@ -1,9 +1,9 @@
-"""Search utilities for discovering new data sources.
+﻿"""Search utilities for discovering new data sources.
 
 This module extends the original Tavily-powered search helpers so that Miner
-can operate as an "AI crawler".  Given a seed query the crawler now discovers
+can operate as an "AI crawler". Given a seed query the crawler now discovers
 related queries, performs focused searches, and extracts the contents of the
-most relevant results.  The aggregated findings are returned in Markdown format
+most relevant results. The aggregated findings are returned in Markdown format
 so that downstream tooling can ingest the output easily.
 """
 
@@ -13,6 +13,8 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Iterable, List, Sequence, TYPE_CHECKING
+
+from .gemini import generate_related_queries as gemini_generate
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from tavily import TavilyClient
@@ -123,11 +125,12 @@ def _collect_strings(value: object) -> List[str]:
         for element in value:
             items.extend(_collect_strings(element))
     elif isinstance(value, dict):
+        mapping = value
         for key in ("label", "query", "title", "question", "text", "name"):
-            candidate = value.get(key)
+            candidate = mapping.get(key)
             if isinstance(candidate, str):
                 items.append(candidate)
-        for element in value.values():
+        for element in mapping.values():
             if isinstance(element, (list, tuple, dict)):
                 items.extend(_collect_strings(element))
     return items
@@ -186,15 +189,33 @@ def discover_related_queries(
     return normalized
 
 
-def _clean_snippet(text: str, *, limit: int = 320) -> str:
+def _normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _clean_snippet(text: str, *, limit: int | None = 320) -> str:
     """Normalize whitespace and truncate long snippets."""
 
-    snippet = re.sub(r"\s+", " ", text).strip()
+    snippet = _normalize_text(text)
     if not snippet:
         return "요약 없음"
-    if len(snippet) > limit:
+    if limit is not None and len(snippet) > limit:
         return snippet[: limit - 3] + "..."
     return snippet
+
+
+def _chunk_text(text: str, *, chunk_size: int) -> List[str]:
+    """Split text into fixed-width chunks after normalization."""
+
+    normalized = _normalize_text(text)
+    if not normalized or chunk_size <= 0:
+        return []
+
+    chunk_size = max(1, chunk_size)
+    return [
+        normalized[index : index + chunk_size]
+        for index in range(0, len(normalized), chunk_size)
+    ]
 
 
 def _run_single_search(
@@ -203,25 +224,27 @@ def _run_single_search(
     *,
     results_per_query: int,
     seen_urls: set[str],
-) -> tuple[str, List[str]]:
-    """Execute a search request and return Markdown plus new URLs."""
+) -> tuple[str, List[str], List[str]]:
+    """Execute a search request and return Markdown plus new URLs and context."""
 
     options = dict(request.options)
     options.setdefault("max_results", results_per_query)
     try:
         response = client.search(query=request.query, **options)
     except Exception as exc:  # pragma: no cover - depends on external API.
-        return (f"### [{request.label}] 검색 실패\n- 오류: {exc}", [])
+        return (f"### [{request.label}] 검색 실패\n- 오류: {exc}", [], [])
 
     items = response.get("results", [])
     if not items:
         return (
             f"### [{request.label}] 검색 결과 없음\n- 사용 쿼리: {request.query}",
             [],
+            [],
         )
 
     new_urls: List[str] = []
     lines: List[str] = []
+    contexts: List[str] = []
     for item in items:
         url = item.get("url") or "URL 없음"
         title = item.get("title") or "제목 없음"
@@ -235,17 +258,22 @@ def _run_single_search(
         lines.append(
             f"- **{title}**\n  - URL: {url}\n  - 요약: {snippet}"
         )
+        context_line = _normalize_text(f"{title} :: {snippet_source}")
+        if context_line:
+            contexts.append(context_line[:400])
         if len(lines) >= results_per_query:
             break
 
     body = "\n".join(lines) if lines else "- 신규 정보 없음"
     section = f"### [{request.label}] 검색 결과\n- 사용 쿼리: {request.query}\n{body}"
-    return section, new_urls
+    return section, new_urls, contexts
 
 
 def _summarize_crawled_content(
     client: "TavilyClient",
     urls: Sequence[str],
+    *,
+    chunk_size: int,
 ) -> List[str]:
     """Fetch and summarize page content for the selected URLs."""
 
@@ -268,9 +296,16 @@ def _summarize_crawled_content(
         url = item.get("url") or "URL 없음"
         title = item.get("title") or "제목 없음"
         content = item.get("content") or ""
-        snippet = _clean_snippet(content, limit=560)
+        chunks = _chunk_text(content, chunk_size=chunk_size)
+        if chunks:
+            chunk_lines = [
+                f"  - 청크 {idx}: {chunk}"
+                for idx, chunk in enumerate(chunks, start=1)
+            ]
+        else:
+            chunk_lines = [f"  - 내용 요약: {_clean_snippet(content)}"]
         summaries.append(
-            f"- **{title}**\n  - URL: {url}\n  - 내용 요약: {snippet}"
+            f"- **{title}**\n  - URL: {url}\n" + "\n".join(chunk_lines)
         )
 
     for failed in response.get("failed_results", []):
@@ -281,6 +316,32 @@ def _summarize_crawled_content(
     return summaries
 
 
+def _merge_related_queries(
+    query: str,
+    primary: Sequence[str],
+    fallback: Sequence[str],
+    *,
+    limit: int,
+) -> List[str]:
+    base = query.strip().lower()
+    selections: List[str] = []
+    seen: set[str] = {base}
+
+    for candidate in list(primary) + list(fallback):
+        normalized = _normalize_text(candidate)
+        if not normalized:
+            continue
+        lowered = normalized.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        selections.append(normalized)
+        if len(selections) >= limit:
+            break
+
+    return selections
+
+
 def run_search(
     query: str,
     *,
@@ -288,41 +349,59 @@ def run_search(
     related_limit: int = 5,
     crawl_limit: int = 5,
     results_per_query: int = 5,
+    ai_model: str | None = None,
+    chunk_size: int = 500,
 ) -> str:
     """Execute the Tavily search plan and return aggregated Markdown output."""
 
     api_key = os.getenv("TAVILY_API_KEY")
     client = _resolve_client(api_key, client)
 
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
+
+    if ai_model is None:
+        ai_model = os.getenv("MINER_SEARCH_AI_MODEL") or os.getenv("MINER_GEMINI_MODEL")
+
     sections: List[str] = []
     seen_urls: set[str] = set()
     urls_for_crawl: List[str] = []
+    context_samples: List[str] = []
 
     for request in build_search_plan(query):
-        section, new_urls = _run_single_search(
+        section, new_urls, contexts = _run_single_search(
             client,
             request,
             results_per_query=results_per_query,
             seen_urls=seen_urls,
         )
         sections.append(section)
+        context_samples.extend(contexts)
         for url in new_urls:
             if len(urls_for_crawl) >= crawl_limit:
                 break
             if url not in urls_for_crawl:
                 urls_for_crawl.append(url)
 
-    related_queries = (
-        discover_related_queries(query, client, limit=related_limit)
-        if related_limit > 0
-        else []
-    )
+    related_queries: List[str] = []
+    if related_limit > 0:
+        gemini_queries = gemini_generate(
+            query,
+            limit=related_limit,
+            model=ai_model,
+            context_samples=context_samples[: 3 * related_limit],
+        )
+        fallback_queries = discover_related_queries(query, client, limit=related_limit)
+        related_queries = _merge_related_queries(
+            query,
+            gemini_queries,
+            fallback_queries,
+            limit=related_limit,
+        )
 
     if related_queries:
         related_lines = [f"{idx + 1}. {item}" for idx, item in enumerate(related_queries)]
-        sections.append(
-            "### AI 연관 검색어\n" + "\n".join(related_lines)
-        )
+        sections.append("### Gemini 연관 검색어\n" + "\n".join(related_lines))
 
         for idx, related_query in enumerate(related_queries, start=1):
             request = SearchRequest(
@@ -330,22 +409,27 @@ def run_search(
                 query=related_query,
                 options={"search_depth": "advanced"},
             )
-            section, new_urls = _run_single_search(
+            section, new_urls, contexts = _run_single_search(
                 client,
                 request,
                 results_per_query=results_per_query,
                 seen_urls=seen_urls,
             )
             sections.append(section)
+            context_samples.extend(contexts)
             for url in new_urls:
                 if len(urls_for_crawl) >= crawl_limit:
                     break
                 if url not in urls_for_crawl:
                     urls_for_crawl.append(url)
 
-    crawl_sections = _summarize_crawled_content(client, urls_for_crawl[:crawl_limit])
+    crawl_sections = _summarize_crawled_content(
+        client,
+        urls_for_crawl[:crawl_limit],
+        chunk_size=chunk_size,
+    )
     if crawl_sections:
-        sections.append("### 크롤링된 문서 요약" + "\n" + "\n".join(crawl_sections))
+        sections.append("### 크롤링된 문서 청크" + "\n" + "\n".join(crawl_sections))
 
     return "\n\n".join(sections)
 
