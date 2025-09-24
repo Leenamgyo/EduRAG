@@ -38,13 +38,64 @@ services:
         soft: 65536
         hard: 65536
 
-  qdrant-console:
-    image: qdrant/qdrant-console:latest
-    container_name: edurag-qdrant-console
+  postgres:
+    image: postgres:15
+    container_name: edurag-postgres
     restart: unless-stopped
     ports:
-      - "8081:80"   # 웹 콘솔 접속 포트
+      - "5432:5432"
     environment:
-      QDRANT__URL: http://qdrant:6333  # qdrant 서비스와 연결
+      POSTGRES_DB: edurag
+      POSTGRES_USER: edurag_user
+      POSTGRES_PASSWORD: edurag_password
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: edurag-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console
+    environment:
+      MINIO_ROOT_USER: minio_user
+      MINIO_ROOT_PASSWORD: minio_password
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./data/minio:/data
+
+  airflow-postgres:
+    image: postgres:15
+    container_name: edurag-airflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow_user
+      POSTGRES_PASSWORD: airflow_password
+    volumes:
+      - ./data/airflow-postgres:/var/lib/postgresql/data
+
+  airflow:
+    image: apache/airflow:2.9.2
+    container_name: edurag-airflow
+    restart: unless-stopped
     depends_on:
-      - qdrant
+      - airflow-postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow_user:airflow_password@airflow-postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: "your_fernet_key_here"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock   # docker-in-docker 연결
+    ports:
+      - "8080:8080"   # Airflow 웹 UI
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username admin --password admin --firstname admin --lastname admin --role Admin --email admin@example.com &&
+               airflow webserver & airflow scheduler"
