@@ -1,0 +1,46 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# 환경 변수 파일
+.env
+*.env
+
+# Python 관련
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+env/
+venv/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+
+# OS 관련
+.DS_Store
+Thumbs.db
+
+# 로그 / 임시 파일
+*.log
+*.out
+*.tmp
+
+# Build / Dist
+dist/
+build/
+*.egg-info/
