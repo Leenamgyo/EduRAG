@@ -32,7 +32,7 @@ def load_settings() -> Settings:
         es_username=os.getenv("ES_USERNAME"),
         es_password=os.getenv("ES_PASSWORD"),
         es_index=os.getenv("ES_INDEX", "ai-search-reports"),
-        api_base_url=os.getenv("AI_SEARCH_API", "http://localhost:8000"),
+        api_base_url=os.getenv("AI_SEARCH_API"),
     )
 
 

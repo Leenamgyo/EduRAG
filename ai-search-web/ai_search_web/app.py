@@ -135,26 +135,34 @@ if "refresh_reports" not in st.session_state:
 
 st.title("연구 보고서 생성 및 조회")
 
-with st.form("question_form"):
-    question_input = st.text_area(
-        "연구 질문을 입력하세요",
-        placeholder="예: 생성형 AI 활용 사례의 최신 학술 동향을 알려줘",
-    )
-    submitted = st.form_submit_button("보고서 생성")
+submitted = False
 
-if submitted:
-    cleaned = (question_input or "").strip()
-    if not cleaned:
-        st.warning("질문을 입력해 주세요.")
-    else:
-        try:
-            result = submit_question(cleaned)
-        except RuntimeError as exc:
-            st.error(str(exc))
+if settings.api_base_url:
+    with st.form("question_form"):
+        question_input = st.text_area(
+            "연구 질문을 입력하세요",
+            placeholder="예: 생성형 AI 활용 사례의 최신 학술 동향을 알려줘",
+        )
+        submitted = st.form_submit_button("보고서 생성")
+
+    if submitted:
+        cleaned = (question_input or "").strip()
+        if not cleaned:
+            st.warning("질문을 입력해 주세요.")
         else:
-            st.session_state["latest_result"] = result
-            st.session_state["refresh_reports"] = True
-            st.success("보고서를 생성했습니다. 아래에서 결과를 확인하세요.")
+            try:
+                result = submit_question(cleaned)
+            except RuntimeError as exc:
+                st.error(str(exc))
+            else:
+                st.session_state["latest_result"] = result
+                st.session_state["refresh_reports"] = True
+                st.success("보고서를 생성했습니다. 아래에서 결과를 확인하세요.")
+else:
+    st.info(
+        "보고서 조회만 지원합니다. 새 보고서를 생성하려면 AI_SEARCH_API 환경 변수를"
+        " 설정해 백엔드 주소를 지정하세요."
+    )
 
 if st.session_state.pop("refresh_reports", False):
     fetch_reports.clear()
