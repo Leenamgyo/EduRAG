@@ -9,6 +9,7 @@ so that downstream tooling can ingest the output easily.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections import defaultdict
@@ -572,6 +573,56 @@ def _merge_related_queries(
     return selections
 
 
+def _format_option_value(value: object) -> str:
+    """Render a JSON-like representation used in plan descriptions."""
+
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except TypeError:  # pragma: no cover - extremely defensive.
+        return str(value)
+
+
+def _render_plan_overview(
+    query: str,
+    plan: Sequence[SearchRequest],
+    *,
+    results_per_query: int,
+    crawl_limit: int,
+    related_limit: int,
+    chunk_size: int,
+    ai_model: str | None,
+) -> str:
+    """Return a Markdown section describing how the search will operate."""
+
+    lines = ["### 검색 플랜 요약"]
+    lines.append(f"- 기본 질의: {query}")
+    lines.append(f"- Tavily 결과당 유지: {results_per_query}건")
+    lines.append(f"- 크롤링 최대 URL: {crawl_limit}건")
+    lines.append(f"- 청크 분할 길이: {chunk_size}자")
+    if related_limit > 0:
+        model_label = ai_model or "기본값"
+        lines.append(
+            f"- 연관 검색 생성: 활성 (최대 {related_limit}건, Gemini 모델: {model_label})"
+        )
+    else:
+        lines.append("- 연관 검색 생성: 비활성")
+
+    lines.append("- 기본 검색 요청 목록:")
+    for request in plan:
+        option_summary = ", ".join(
+            f"{key}={_format_option_value(value)}"
+            for key, value in sorted(request.options.items())
+        )
+        if option_summary:
+            lines.append(
+                f"  - [{request.label}] {request.query} (옵션: {option_summary})"
+            )
+        else:
+            lines.append(f"  - [{request.label}] {request.query}")
+
+    return "\n".join(lines)
+
+
 def run_search(
     query: str,
     *,
@@ -599,7 +650,17 @@ def run_search(
             or os.getenv("MINER_GEMINI_MODEL")
         )
 
-    sections: List[str] = []
+    plan = build_search_plan(query)
+
+    sections: List[str] = [_render_plan_overview(
+        query,
+        plan,
+        results_per_query=results_per_query,
+        crawl_limit=crawl_limit,
+        related_limit=related_limit,
+        chunk_size=chunk_size,
+        ai_model=ai_model,
+    )]
     seen_urls: set[str] = set()
     urls_for_crawl: List[str] = []
     url_metadata: dict[str, dict[str, str]] = {}
@@ -607,7 +668,7 @@ def run_search(
     collected_chunks: List[SearchChunk] = []
     crawl_failures: List[str] = []
 
-    for request in build_search_plan(query):
+    for request in plan:
         section, new_urls, contexts, hits = _run_single_search(
             client,
             request,
