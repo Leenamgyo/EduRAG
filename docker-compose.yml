@@ -37,3 +37,14 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+
+  qdrant-console:
+    image: qdrant/qdrant-console:latest
+    container_name: edurag-qdrant-console
+    restart: unless-stopped
+    ports:
+      - "8081:80"   # 웹 콘솔 접속 포트
+    environment:
+      QDRANT__URL: http://qdrant:6333  # qdrant 서비스와 연결
+    depends_on:
+      - qdrant
