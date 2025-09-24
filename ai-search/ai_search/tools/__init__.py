@@ -6,12 +6,14 @@ from .tavily_tool import tavily_web_search
 from .semantic_scholar import semantic_scholar_search
 from .crossref_tool import crossref_search
 from .openalex_tool import openalex_search
+from .qdrant_rag import qdrant_rag_search
 
 DEFAULT_TOOLCHAIN: Sequence = (
     tavily_web_search,
     semantic_scholar_search,
     crossref_search,
     openalex_search,
+    qdrant_rag_search,
 )
 
 SEARCH_TOOL_PAIRS = (
@@ -19,6 +21,7 @@ SEARCH_TOOL_PAIRS = (
     ("Semantic Scholar", semantic_scholar_search),
     ("CrossRef", crossref_search),
     ("OpenAlex", openalex_search),
+    ("Qdrant RAG", qdrant_rag_search),
 )
 
 __all__ = [
@@ -28,4 +31,5 @@ __all__ = [
     "semantic_scholar_search",
     "crossref_search",
     "openalex_search",
+    "qdrant_rag_search",
 ]
