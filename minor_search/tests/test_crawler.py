@@ -47,6 +47,7 @@ crawler_module = importlib.import_module("minor_search.crawler")
 search_module = importlib.import_module("minor_search.search")
 
 CrawlJob = crawler_module.CrawlJob
+CrawlProject = crawler_module.CrawlProject
 CrawlState = crawler_module.CrawlState
 InMemoryJobQueue = crawler_module.InMemoryJobQueue
 Master = crawler_module.Master
@@ -109,8 +110,8 @@ def test_worker_processes_job_and_enqueues_related() -> None:
             return FakeResult(["follow up", "seed"]).to_run_result()
         return FakeResult([]).to_run_result()
 
-    def result_handler(job: CrawlJob, result: SearchRunResult, object_name: str | None) -> None:
-        handled.append((job.query, len(result.chunks), object_name))
+    def result_handler(job: CrawlJob, result: SearchRunResult) -> None:
+        handled.append((job.query, len(result.chunks)))
 
     scheduler.schedule(["seed"])
     worker = Worker(
@@ -129,6 +130,7 @@ def test_worker_processes_job_and_enqueues_related() -> None:
     next_job = queue.dequeue(timeout=0.01)
     assert next_job is not None
     assert next_job.query == "follow up"
+    assert next_job.project is None
 
 
 def test_master_drains_queue_with_multiple_workers() -> None:
@@ -158,4 +160,32 @@ def test_master_drains_queue_with_multiple_workers() -> None:
     # Three jobs should be processed (seed-1, seed-2, seed-3).
     assert processed == 3
     assert queue.size() == 0
+
+
+def test_schedule_project_applies_metadata() -> None:
+    queue = InMemoryJobQueue()
+    state = CrawlState()
+    scheduler = Scheduler(queue, state)
+
+    project = CrawlProject(
+        name="edu-reform",
+        seeds=[
+            "교육 혁신",
+            CrawlJob(query="디지털 교실", metadata={"priority": "high"}),
+        ],
+        search_kwargs={"crawl_limit": 3},
+        metadata={"owner": "team-a"},
+    )
+
+    scheduled = scheduler.schedule([project])
+    assert scheduled == 2
+
+    first = queue.dequeue()
+    second = queue.dequeue()
+    assert first is not None and second is not None
+    assert {first.project, second.project} == {"edu-reform"}
+    assert first.search_kwargs == {"crawl_limit": 3}
+    assert second.search_kwargs == {"crawl_limit": 3}
+    assert first.metadata == {"owner": "team-a"}
+    assert second.metadata == {"owner": "team-a", "priority": "high"}
 

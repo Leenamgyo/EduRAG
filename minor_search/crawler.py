@@ -8,6 +8,9 @@ production usage.
 
 The key pieces are:
 
+``CrawlProject``
+    Logical grouping of seeds that share metadata and default configuration.
+
 ``CrawlJob``
     Container describing a single unit of crawling work (query string plus
     optional overrides and metadata).
@@ -25,8 +28,8 @@ The key pieces are:
 
 ``Worker``
     Pops jobs from the queue, executes the search via the injected ``search``
-    callable, stores the resulting chunks when configured, and pushes any newly
-    discovered related queries back onto the queue.
+    callable, and pushes any newly discovered related queries back onto the
+    queue.  Results can be forwarded to custom handlers for persistence.
 
 ``Master``
     Coordinates a pool of workers and drains the queue until no more work
@@ -42,14 +45,14 @@ used by the CLI entry point.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 import threading
 import time
 from itertools import cycle
-from typing import Any, Callable, Deque, Iterable, Optional, Protocol
+from typing import Any, Callable, Deque, Iterable, Optional, Protocol, Sequence
 
-from .search import AgentChunkResult, SearchRunResult
+from .search import SearchRunResult
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +78,7 @@ class CrawlJob:
     """Description of a single crawling task pulled from the queue."""
 
     query: str
-    store_result: bool = True
-    object_name: str | None = None
+    project: str | None = None
     search_kwargs: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     attempts: int = 0
@@ -85,6 +87,16 @@ class CrawlJob:
         """Return a canonical representation used for deduplication."""
 
         return " ".join(self.query.split())
+
+
+@dataclass(slots=True)
+class CrawlProject:
+    """Group of related crawl jobs executed together."""
+
+    name: str
+    seeds: Sequence[str | CrawlJob]
+    search_kwargs: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class CrawlState:
@@ -150,11 +162,15 @@ class Scheduler:
         self.queue = queue
         self.state = state or CrawlState()
 
-    def schedule(self, seeds: Iterable[str | CrawlJob]) -> int:
-        """Add the provided seeds to the queue, skipping duplicates."""
+    def schedule(self, seeds: Iterable[str | CrawlJob | CrawlProject]) -> int:
+        """Add the provided seeds or projects to the queue, skipping duplicates."""
 
         count = 0
         for item in seeds:
+            if isinstance(item, CrawlProject):
+                count += self.schedule_project(item)
+                continue
+
             job = item if isinstance(item, CrawlJob) else CrawlJob(query=str(item))
             if not job.query.strip():
                 continue
@@ -164,26 +180,28 @@ class Scheduler:
             count += 1
         return count
 
+    def schedule_project(self, project: CrawlProject) -> int:
+        """Enqueue all seeds defined within a project."""
 
-StorageHandler = Callable[[CrawlJob, SearchRunResult], Optional[str]]
-ResultHandler = Callable[[CrawlJob, SearchRunResult, Optional[str]], None]
+        count = 0
+        for seed in project.seeds:
+            base_job = seed if isinstance(seed, CrawlJob) else CrawlJob(query=str(seed))
+            job = replace(
+                base_job,
+                project=project.name,
+                search_kwargs={**project.search_kwargs, **base_job.search_kwargs},
+                metadata={**project.metadata, **base_job.metadata},
+            )
+            if not job.query.strip():
+                continue
+            if not self.state.mark_seen(job.query):
+                continue
+            self.queue.enqueue(job)
+            count += 1
+        return count
 
 
-def build_minio_storage_handler(client: Any, settings: Any) -> StorageHandler:
-    """Return a storage handler that uploads chunks to MinIO."""
-
-    from .storage.minio import store_agent_chunks  # Local import avoids cycle.
-
-    def _handler(job: CrawlJob, result: SearchRunResult) -> Optional[str]:
-        chunk_result = AgentChunkResult.from_run_result(result)
-        return store_agent_chunks(
-            client,
-            settings,
-            chunk_result,
-            object_name=job.object_name,
-        )
-
-    return _handler
+ResultHandler = Callable[[CrawlJob, SearchRunResult], None]
 
 
 class Worker:
@@ -196,7 +214,6 @@ class Worker:
         state: CrawlState | None = None,
         search: Callable[..., SearchRunResult],
         default_search_kwargs: Optional[dict[str, Any]] = None,
-        storage_handler: StorageHandler | None = None,
         result_handler: ResultHandler | None = None,
         enqueue_related: bool = True,
         max_retries: int = 2,
@@ -207,7 +224,6 @@ class Worker:
         self.state = state or CrawlState()
         self.search = search
         self.default_search_kwargs = default_search_kwargs or {}
-        self.storage_handler = storage_handler
         self.result_handler = result_handler
         self.enqueue_related = enqueue_related
         self.max_retries = max(0, max_retries)
@@ -238,18 +254,8 @@ class Worker:
             self.logger.exception("%s failed: %s", job.normalized_query(), exc)
             return False
 
-        object_name: Optional[str] = None
-        if self.storage_handler and job.store_result:
-            try:
-                object_name = self.storage_handler(job, result)
-            except Exception as exc:  # pragma: no cover - defensive logging.
-                self.logger.exception(
-                    "%s storage failed: %s", job.normalized_query(), exc
-                )
-                object_name = None
-
         if self.result_handler:
-            self.result_handler(job, result, object_name)
+            self.result_handler(job, result)
 
         if self.enqueue_related and result.related_queries:
             for related in result.related_queries:
@@ -259,10 +265,9 @@ class Worker:
                     continue
                 child_job = CrawlJob(
                     query=related,
-                    store_result=job.store_result,
-                    object_name=None,
+                    project=job.project,
                     search_kwargs=dict(job.search_kwargs),
-                    metadata={"parent_query": job.query},
+                    metadata={**job.metadata, "parent_query": job.query},
                 )
                 self.queue.enqueue(child_job)
 
@@ -319,8 +324,8 @@ __all__ = [
     "InMemoryJobQueue",
     "JobQueue",
     "Master",
+    "CrawlProject",
     "Scheduler",
     "Worker",
-    "build_minio_storage_handler",
 ]
 

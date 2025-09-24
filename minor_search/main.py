@@ -7,13 +7,7 @@ import logging
 import os
 from typing import Iterable
 
-from . import (
-    AgentChunkResult,
-    MinioSettings,
-    create_minio_client,
-    run_search,
-    store_agent_chunks,
-)
+from . import run_search
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -35,8 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Minor Search: Tavily + Gemini powered research orchestrator. "
-            "Runs focused searches, aggregates the results, and optionally "
-            "stores agent-ready chunks in MinIO for Minor to consume."
+            "Runs focused searches and aggregates the results with agent-ready "
+            "chunks for downstream pipelines."
         )
     )
     parser.add_argument("query", help="Seed query string that drives the search plan.")
@@ -90,65 +84,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable debug logging.",
     )
 
-    default_store = _env_flag("MINOR_SEARCH_STORE", True)
-    parser.add_argument(
-        "--store",
-        dest="store",
-        action="store_true",
-        default=default_store,
-        help="Store the resulting chunks in MinIO (default: enabled).",
-    )
-    parser.add_argument(
-        "--no-store",
-        dest="store",
-        action="store_false",
-        help="Skip uploading results to MinIO.",
-    )
-    parser.add_argument(
-        "--object-name",
-        help="Custom object name to use when uploading to MinIO.",
-    )
-
-    default_minio_secure = _env_flag("MINOR_SEARCH_MINIO_SECURE", False)
-    parser.add_argument(
-        "--minio-endpoint",
-        default=os.getenv("MINOR_SEARCH_MINIO_ENDPOINT", "localhost:9000"),
-        help="Endpoint for the MinIO deployment.",
-    )
-    parser.add_argument(
-        "--minio-access-key",
-        default=os.getenv("MINOR_SEARCH_MINIO_ACCESS_KEY", "minioadmin"),
-        help="Access key for MinIO authentication.",
-    )
-    parser.add_argument(
-        "--minio-secret-key",
-        default=os.getenv("MINOR_SEARCH_MINIO_SECRET_KEY", "minioadmin"),
-        help="Secret key for MinIO authentication.",
-    )
-    parser.add_argument(
-        "--minio-bucket",
-        default=os.getenv("MINOR_SEARCH_MINIO_BUCKET", "minor-search"),
-        help="Bucket where search results are stored.",
-    )
-    parser.add_argument(
-        "--minio-region",
-        default=os.getenv("MINOR_SEARCH_MINIO_REGION"),
-        help="Optional region for the MinIO bucket.",
-    )
-    parser.add_argument(
-        "--minio-secure",
-        dest="minio_secure",
-        action="store_true",
-        default=default_minio_secure,
-        help="Use HTTPS for MinIO connections (default based on env).",
-    )
-    parser.add_argument(
-        "--minio-insecure",
-        dest="minio_secure",
-        action="store_false",
-        help="Force HTTP for MinIO connections.",
-    )
-
     return parser
 
 
@@ -183,32 +118,6 @@ def main(args: Iterable[str] | None = None) -> None:
     print(search_result.to_markdown())
     if search_result.run_id:
         print(f"\n실행 로그 ID: {search_result.run_id}")
-
-    if not parsed.store:
-        return
-
-    chunk_result = AgentChunkResult.from_run_result(search_result)
-    settings = MinioSettings(
-        endpoint=parsed.minio_endpoint,
-        access_key=parsed.minio_access_key,
-        secret_key=parsed.minio_secret_key,
-        bucket=parsed.minio_bucket,
-        secure=parsed.minio_secure,
-        region=parsed.minio_region,
-    )
-    client = create_minio_client(settings)
-
-    try:
-        object_name = store_agent_chunks(
-            client,
-            settings,
-            chunk_result,
-            object_name=parsed.object_name,
-        )
-    except RuntimeError as exc:
-        parser.error(str(exc))
-
-    print(f"\nMinIO 객체로 저장됨: s3://{settings.bucket}/{object_name}")
 
 
 if __name__ == "__main__":
