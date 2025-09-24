@@ -176,7 +176,7 @@ wheels = [
 ]
 
 [[package]]
-name = "charts-workflow"
+name = "ai-search"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

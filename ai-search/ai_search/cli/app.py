@@ -1,4 +1,4 @@
-ï»¿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import time
@@ -10,11 +10,11 @@ from langchain.agents import AgentExecutor
 from langchain.globals import set_debug, set_verbose
 from langchain_core.messages import AIMessage, HumanMessage
 
-from charts_workflow.agents.builder import build_agent
-from charts_workflow.config.settings import settings  # noqa: F401 - ensure env is loaded
-from charts_workflow.core.plan_parser import extract_plan_steps, extract_search_queries
-from charts_workflow.storage.report_manager import save_report
-from charts_workflow.tools import DEFAULT_TOOLCHAIN, SEARCH_TOOL_PAIRS
+from ai_search.agents.builder import build_agent
+from ai_search.config.settings import settings  # noqa: F401 - ensure env is loaded
+from ai_search.core.plan_parser import extract_plan_steps, extract_search_queries
+from ai_search.storage.report_manager import save_report
+from ai_search.tools import DEFAULT_TOOLCHAIN, SEARCH_TOOL_PAIRS
 
 
 def _initialise_agent(toolchain: Sequence) -> tuple:
@@ -31,7 +31,7 @@ def _initialise_agent(toolchain: Sequence) -> tuple:
 def _invoke_with_backoff(
     func,
     *args,
-    attempt_label="ìš”ì²­",
+    attempt_label="¿äÃ»",
     max_attempts=5,
     initial_delay=2,
     **kwargs,
@@ -47,47 +47,47 @@ def _invoke_with_backoff(
         ) as exc:
             if attempt == max_attempts:
                 raise RuntimeError(
-                    f"Gemini ëª¨ë¸ ê³¼ë¶€í•˜ë¡œ {attempt_label} ì‘ì—…ì´ ë°˜ë³µ ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. ì ì‹œ í›„ ë‹¤ì‹œ ì‹œë„í•˜ê±°ë‚˜ `GEMINI_MODEL`ì„ ë³€ê²½í•˜ì„¸ìš”."
+                    f"Gemini ¸ğµ¨ °úºÎÇÏ·Î {attempt_label} ÀÛ¾÷ÀÌ ¹İº¹ ½ÇÆĞÇß½À´Ï´Ù. Àá½Ã ÈÄ ´Ù½Ã ½ÃµµÇÏ°Å³ª `GEMINI_MODEL`À» º¯°æÇÏ¼¼¿ä."
                 ) from exc
             wait_seconds = delay
             print(
-                f"[ê²½ê³ ] Gemini ëª¨ë¸ ê³¼ë¶€í•˜ë¡œ {attempt_label}ì„(ë¥¼) ì¬ì‹œë„í•©ë‹ˆë‹¤. {wait_seconds}ì´ˆ ëŒ€ê¸° í›„ ì¬ì‹œë„ ({attempt}/{max_attempts - 1})"
+                f"[°æ°í] Gemini ¸ğµ¨ °úºÎÇÏ·Î {attempt_label}À»(¸¦) Àç½ÃµµÇÕ´Ï´Ù. {wait_seconds}ÃÊ ´ë±â ÈÄ Àç½Ãµµ ({attempt}/{max_attempts - 1})"
             )
             time.sleep(wait_seconds)
             delay = min(delay * 2, 30)
         except google_exceptions.GoogleAPIError as exc:
             message = getattr(exc, "message", str(exc))
-            raise RuntimeError(f"Gemini API í˜¸ì¶œì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤: {message}") from exc
-    raise RuntimeError(f"{attempt_label} ì‘ì—…ì„ ì™„ë£Œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.")
+            raise RuntimeError(f"Gemini API È£Ãâ¿¡ ½ÇÆĞÇß½À´Ï´Ù: {message}") from exc
+    raise RuntimeError(f"{attempt_label} ÀÛ¾÷À» ¿Ï·áÇÏÁö ¸øÇß½À´Ï´Ù.")
 
 def run_cli(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="AI ë¶„ì„ê°€ ì½˜ì†” ì›Œí¬í”Œë¡œ")
+    parser = argparse.ArgumentParser(description="AI ºĞ¼®°¡ ÄÜ¼Ö ¿öÅ©ÇÃ·Î")
     parser.add_argument(
         "--report-format",
         choices=["md", "txt"],
         default="md",
-        help="ë³´ê³ ì„œ ì €ì¥ í˜•ì‹",
+        help="º¸°í¼­ ÀúÀå Çü½Ä",
     )
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="LangChain ë””ë²„ê·¸ ëª¨ë“œë¥¼ í™œì„±í™”í•©ë‹ˆë‹¤.",
+        help="LangChain µğ¹ö±× ¸ğµå¸¦ È°¼ºÈ­ÇÕ´Ï´Ù.",
     )
     args = parser.parse_args(argv)
 
     if args.debug:
         set_debug(True)
         set_verbose(True)
-        print("[ë””ë²„ê·¸ ëª¨ë“œ] LangChain debug ë¡œê·¸ê°€ í™œì„±í™”ë˜ì—ˆìŠµë‹ˆë‹¤.")
+        print("[µğ¹ö±× ¸ğµå] LangChain debug ·Î±×°¡ È°¼ºÈ­µÇ¾ú½À´Ï´Ù.")
 
     tools = list(DEFAULT_TOOLCHAIN)
     planner, agent_executor = _initialise_agent(tools)
 
     chat_history: List[AIMessage | HumanMessage] = []
-    print("ì•ˆë…•í•˜ì„¸ìš”! AI ë¶„ì„ê°€ ì›Œí¬í”Œë¡œê°€ ì¤€ë¹„ë˜ì—ˆìŠµë‹ˆë‹¤. 'exit'ì„ ì…ë ¥í•˜ë©´ ì¢…ë£Œí•©ë‹ˆë‹¤.")
+    print("¾È³çÇÏ¼¼¿ä! AI ºĞ¼®°¡ ¿öÅ©ÇÃ·Î°¡ ÁØºñµÇ¾ú½À´Ï´Ù. 'exit'À» ÀÔ·ÂÇÏ¸é Á¾·áÇÕ´Ï´Ù.")
 
     while True:
-        question = input("ì§ˆë¬¸: ").strip()
+        question = input("Áú¹®: ").strip()
         if question.lower() == "exit":
             break
         if not question:
@@ -99,18 +99,18 @@ def run_cli(argv: list[str] | None = None) -> None:
                 "input": question,
                 "chat_history": chat_history,
             },
-            attempt_label="ë¶„ì„ ê³„íš ìƒì„±",
+            attempt_label="ºĞ¼® °èÈ¹ »ı¼º",
         )
 
         plan_steps = extract_plan_steps(analysis_plan)
 
-        print("\n[ë¶„ì„ ê³„íš ì´ˆì•ˆ]\n")
+        print("\n[ºĞ¼® °èÈ¹ ÃÊ¾È]\n")
         print(analysis_plan)
 
         search_summaries: List[str] = []
         search_queries = extract_search_queries(analysis_plan)
         if search_queries:
-            print("\n[ê²€ìƒ‰ ì‹¤í–‰]\n")
+            print("\n[°Ë»ö ½ÇÇà]\n")
             for query in search_queries:
                 print(f"- {query}")
                 section_lines = []
@@ -118,27 +118,27 @@ def run_cli(argv: list[str] | None = None) -> None:
                     try:
                         references = tool.invoke({"query": query})
                     except Exception as exc:  # noqa: BLE001 - display tool failure directly
-                        references = f"ê²€ìƒ‰ ì‹¤íŒ¨: {exc}"
+                        references = f"°Ë»ö ½ÇÆĞ: {exc}"
                     print(f"  [{label}]")
                     print(references)
                     section_lines.append(f"#### {label}\n{references}")
                 search_summaries.append(
-                    f"### ê²€ìƒ‰ ê²°ê³¼: {query}\n\n" + "\n\n".join(section_lines)
+                    f"### °Ë»ö °á°ú: {query}\n\n" + "\n\n".join(section_lines)
                 )
 
         if search_summaries:
             chat_history.append(
-                AIMessage(content="[ì™¸ë¶€ ê²€ìƒ‰ ê²°ê³¼]\n" + "\n\n".join(search_summaries))
+                AIMessage(content="[¿ÜºÎ °Ë»ö °á°ú]\n" + "\n\n".join(search_summaries))
             )
 
         if plan_steps:
-            print("\n[ë‹¨ê³„ë³„ ì‚¬ì „ ë¶„ì„]\n")
+            print("\n[´Ü°èº° »çÀü ºĞ¼®]\n")
             for step in plan_steps:
                 step_prompt = (
-                    "[ë‹¨ê³„ë³„ ì¡°ì‚¬ ìš”ì²­]\n"
+                    "[´Ü°èº° Á¶»ç ¿äÃ»]\n"
                     f"{step}\n\n"
-                    "ìœ„ ë‹¨ê³„ì˜ ëª©ì ì„ ë‹¬ì„±í•˜ê¸° ìœ„í•´ í•„ìš”í•œ ì¶”ê°€ ì¡°ì‚¬ ë…¸íŠ¸ë¥¼ bullet ì¤‘ì‹¬ìœ¼ë¡œ ì •ë¦¬í•˜ì„¸ìš”. "
-                    "ìµœì¢… ë³´ê³ ì„œ(Part 1~IX)ëŠ” ì‘ì„±í•˜ì§€ ë§ê³ , ê·¼ê±°, ì°¸ê³  ë°ì´í„°, í™œìš©í•  ë„êµ¬ ì•„ì´ë””ì–´ë¥¼ êµ¬ì²´ì ìœ¼ë¡œ ì œì•ˆí•˜ì„¸ìš”."
+                    "À§ ´Ü°èÀÇ ¸ñÀûÀ» ´Ş¼ºÇÏ±â À§ÇØ ÇÊ¿äÇÑ Ãß°¡ Á¶»ç ³ëÆ®¸¦ bullet Áß½ÉÀ¸·Î Á¤¸®ÇÏ¼¼¿ä. "
+                    "ÃÖÁ¾ º¸°í¼­(Part 1~IX)´Â ÀÛ¼ºÇÏÁö ¸»°í, ±Ù°Å, Âü°í µ¥ÀÌÅÍ, È°¿ëÇÒ µµ±¸ ¾ÆÀÌµğ¾î¸¦ ±¸Ã¼ÀûÀ¸·Î Á¦¾ÈÇÏ¼¼¿ä."
                 )
                 print(f"- {step}")
                 step_result = _invoke_with_backoff(
@@ -148,7 +148,7 @@ def run_cli(argv: list[str] | None = None) -> None:
                         "chat_history": chat_history,
                         "analysis_plan": analysis_plan,
                     },
-                    attempt_label=f"ë‹¨ê³„ë³„ ë¶„ì„ ({step})",
+                    attempt_label=f"´Ü°èº° ºĞ¼® ({step})",
                 )
                 step_content = step_result["output"]
                 chat_history.append(HumanMessage(content=step_prompt))
@@ -163,7 +163,7 @@ def run_cli(argv: list[str] | None = None) -> None:
                 "chat_history": chat_history,
                 "analysis_plan": analysis_plan,
             },
-            attempt_label="ìµœì¢… ë¦¬í¬íŠ¸ ìƒì„±",
+            attempt_label="ÃÖÁ¾ ¸®Æ÷Æ® »ı¼º",
         )
 
         content = result["output"]
@@ -172,7 +172,7 @@ def run_cli(argv: list[str] | None = None) -> None:
         chat_history.append(AIMessage(content=content))
         save_report(question, content, report_format=args.report_format)
 
-        print("\n[ìµœì¢… ë¶„ì„ ë¦¬í¬íŠ¸]\n")
+        print("\n[ÃÖÁ¾ ºĞ¼® ¸®Æ÷Æ®]\n")
         print(content)
 
 

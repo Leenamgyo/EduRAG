@@ -9,8 +9,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableLambda
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from charts_workflow.agents.prompts import ANALYST_PROMPT, PLAN_PROMPT
-from charts_workflow.config.settings import settings
+from ai_search.agents.prompts import ANALYST_PROMPT, PLAN_PROMPT
+from ai_search.config.settings import settings
 
 
 def build_agent(tools: Sequence):
@@ -51,7 +51,7 @@ def build_agent(tools: Sequence):
         ("system", ANALYST_PROMPT),
         (
             "system",
-            "다음은 이번 분석을 위해 사전에 합의된 '분석 계획 초안'입니다. 각 단계의 취지를 충실히 반영해 응답하세요.\n{analysis_plan}",
+            "?�음?� ?�번 분석???�해 ?�전???�의??'분석 계획 초안'?�니?? �??�계??취�?�?충실??반영???�답?�세??\n{analysis_plan}",
         ),
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "{input}"),

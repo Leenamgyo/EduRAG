@@ -1,10 +1,10 @@
-ï»¿from __future__ import annotations
+from __future__ import annotations
 
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from charts_workflow.config.settings import settings
+from ai_search.config.settings import settings
 
 SUPPORTED_FORMATS = {"md", "txt"}
 DEFAULT_ENCODING = "utf-8"
@@ -29,19 +29,19 @@ def save_report(question: str, content: str, directory: Optional[str] = None, re
     file_path = target_dir / f"{uuid.uuid1()}{suffix}"
 
     if report_format == "md":
-        file_contents = f"# ì§ˆë¬¸\n\n{question}\n\n---\n\n# ë¶„ì„ ë¦¬í¬íŠ¸\n\n{content}"
+        file_contents = f"# Áú¹®\n\n{question}\n\n---\n\n# ºĞ¼® ¸®Æ÷Æ®\n\n{content}"
     else:
         file_contents = (
-            "[ì§ˆë¬¸]\n"
+            "[Áú¹®]\n"
             f"{question}\n\n"
-            "[ë¶„ì„ ë¦¬í¬íŠ¸]\n"
+            "[ºĞ¼® ¸®Æ÷Æ®]\n"
             f"{content}"
         )
 
     try:
         file_path.write_text(file_contents, encoding=DEFAULT_ENCODING)
-        print(f"[ë³´ê³ ì„œ ì €ì¥ ì™„ë£Œ] {file_path}")
+        print(f"[º¸°í¼­ ÀúÀå ¿Ï·á] {file_path}")
         return str(file_path)
     except Exception as exc:  # noqa: BLE001 - surface full error for CLI visibility
-        print(f"[ë³´ê³ ì„œ ì €ì¥ ì‹¤íŒ¨] {exc}")
+        print(f"[º¸°í¼­ ÀúÀå ½ÇÆĞ] {exc}")
         return None

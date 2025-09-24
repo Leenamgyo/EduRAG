@@ -1,4 +1,4 @@
-ï»¿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
@@ -7,7 +7,7 @@ import re
 
 import streamlit as st
 
-from charts_workflow.config.settings import settings
+from ai_search.config.settings import settings
 
 REPORTS_DIR = settings.reports_dir
 
@@ -23,17 +23,17 @@ def get_all_reports(directory: Path) -> List[dict]:
         try:
             with filepath.open("r", encoding="utf-8") as handle:
                 first_line = handle.readline()
-                question = first_line.replace("# ì§ˆë¬¸", "").strip()
+                question = first_line.replace("# Áú¹®", "").strip()
             mod_time = datetime.fromtimestamp(filepath.stat().st_mtime)
             report_files.append(
                 {
                     "filename": filepath.name,
-                    "question": question or "ì œëª© ì—†ìŒ",
+                    "question": question or "Á¦¸ñ ¾øÀ½",
                     "date": mod_time.strftime("%Y-%m-%d %H:%M:%S"),
                 }
             )
         except Exception as exc:  # noqa: BLE001 - display failure in console
-            print(f"ë³´ê³ ì„œ ë¡œë“œ ì˜¤ë¥˜ ({filepath.name}): {exc}")
+            print(f"º¸°í¼­ ·Îµå ¿À·ù ({filepath.name}): {exc}")
     return sorted(report_files, key=lambda item: item["date"], reverse=True)
 
 
@@ -47,14 +47,14 @@ def read_report_file(filename: str, directory: Path = REPORTS_DIR) -> Tuple[str,
             parts = full_content.split("\n---\n", 1)
             if len(parts) == 2:
                 question_part, content_part = parts
-                question = question_part.replace("# ì§ˆë¬¸", "").strip()
-                content = content_part.replace("# ë¶„ì„ ë¦¬í¬íŠ¸", "").strip()
+                question = question_part.replace("# Áú¹®", "").strip()
+                content = content_part.replace("# ºĞ¼® ¸®Æ÷Æ®", "").strip()
                 return question, content
-            return "ì§ˆë¬¸ ì—†ìŒ", full_content
+            return "Áú¹® ¾øÀ½", full_content
     except FileNotFoundError:
-        return "ë³´ê³ ì„œë¥¼ ì°¾ì„ ìˆ˜ ì—†ìŠµë‹ˆë‹¤.", ""
+        return "º¸°í¼­¸¦ Ã£À» ¼ö ¾ø½À´Ï´Ù.", ""
     except Exception as exc:  # noqa: BLE001 - surface full error to UI
-        return f"ë³´ê³ ì„œ ë¡œë”© ì˜¤ë¥˜: {exc}", ""
+        return f"º¸°í¼­ ·Îµù ¿À·ù: {exc}", ""
 
 
 def process_latex(text: str) -> str:
@@ -62,24 +62,24 @@ def process_latex(text: str) -> str:
     return re.sub(r"\\\\\[(.*?)\\\\\]", r"$$\\1$$", text, flags=re.DOTALL)
 
 
-st.set_page_config(page_title="ë¶„ì„ ê¸°íšì•ˆ ë·°ì–´", layout="wide")
+st.set_page_config(page_title="ºĞ¼® ±âÈ¹¾È ºä¾î", layout="wide")
 st.markdown(
     """
     <style>
-    /* ì‚¬ìš©ì ì •ì˜ ìŠ¤íƒ€ì¼ì„ ì—¬ê¸°ì— ì¶”ê°€í•˜ì„¸ìš” */
+    /* »ç¿ëÀÚ Á¤ÀÇ ½ºÅ¸ÀÏÀ» ¿©±â¿¡ Ãß°¡ÇÏ¼¼¿ä */
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.sidebar.header("ë¦¬í¬íŠ¸ ëª©ë¡ ì—´ëŒ")
+st.sidebar.header("¸®Æ÷Æ® ¸ñ·Ï ¿­¶÷")
 reports = get_all_reports(REPORTS_DIR)
 
 if not reports:
-    st.sidebar.info("ì €ì¥ëœ ë¶„ì„ ê¸°íšì•ˆì´ ì—†ìŠµë‹ˆë‹¤.")
+    st.sidebar.info("ÀúÀåµÈ ºĞ¼® ±âÈ¹¾ÈÀÌ ¾ø½À´Ï´Ù.")
 else:
     report_options = {f"{item['question']} ({item['filename']})": item["filename"] for item in reports}
-    selected_key = st.sidebar.selectbox("ì—´ëŒí•  ë¦¬í¬íŠ¸ë¥¼ ì„ íƒí•˜ì„¸ìš”", list(report_options.keys()), index=0)
+    selected_key = st.sidebar.selectbox("¿­¶÷ÇÒ ¸®Æ÷Æ®¸¦ ¼±ÅÃÇÏ¼¼¿ä", list(report_options.keys()), index=0)
     selected_filename = report_options[selected_key]
 
     question, content = read_report_file(selected_filename)
@@ -87,27 +87,27 @@ else:
     selected_report_info = next((item for item in reports if item["filename"] == selected_filename), None)
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("í˜„ì¬ ì—´ëŒ ì¤‘ì¸ ë¦¬í¬íŠ¸")
+    st.sidebar.subheader("ÇöÀç ¿­¶÷ ÁßÀÎ ¸®Æ÷Æ®")
     if selected_report_info:
         st.sidebar.markdown(f"**{selected_report_info['question']}**")
-        st.sidebar.markdown(f"**íŒŒì¼ëª…** `{selected_report_info['filename']}`")
-        st.sidebar.markdown(f"**ì‘ì„±ì¼** {selected_report_info['date']}")
+        st.sidebar.markdown(f"**ÆÄÀÏ¸í** `{selected_report_info['filename']}`")
+        st.sidebar.markdown(f"**ÀÛ¼ºÀÏ** {selected_report_info['date']}")
 
-    st.markdown("<div class='title'>ë¶„ì„ ê¸°íšì•ˆ ë·°ì–´</div>", unsafe_allow_html=True)
+    st.markdown("<div class='title'>ºĞ¼® ±âÈ¹¾È ºä¾î</div>", unsafe_allow_html=True)
 
     with st.container():
         st.markdown(
             f"""
             <div class='card'>
-                <b>ì§ˆë¬¸:</b> {question}<br/>
-                <b>ì‘ì„±ì¼:</b> {selected_report_info['date'] if selected_report_info else 'ì•Œ ìˆ˜ ì—†ìŒ'}
+                <b>Áú¹®:</b> {question}<br/>
+                <b>ÀÛ¼ºÀÏ:</b> {selected_report_info['date'] if selected_report_info else '¾Ë ¼ö ¾øÀ½'}
             </div>
             """,
             unsafe_allow_html=True,
         )
 
     st.markdown("---")
-    st.subheader("ìƒì„¸ ë‚´ìš©")
+    st.subheader("»ó¼¼ ³»¿ë")
 
     with st.container():
         st.markdown(f"<div class='card'>{content}</div>", unsafe_allow_html=True)

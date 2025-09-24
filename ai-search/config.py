@@ -1,4 +1,4 @@
-from charts_workflow.config.settings import settings
+from ai_search.config.settings import settings
 
 GOOGLE_API_KEY = settings.google_api_key
 OPENAI_API_KEY = settings.openai_api_key

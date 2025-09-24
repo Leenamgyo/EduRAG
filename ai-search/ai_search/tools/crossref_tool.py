@@ -69,7 +69,7 @@ def _candidate_queries(original: str) -> Iterable[str]:
 
 def _build_headers() -> tuple[dict[str, str], str | None]:
     contact = os.getenv("CROSSREF_MAILTO") or os.getenv("CONTACT_EMAIL")
-    user_agent = "charts-workflow-cli/1.0"
+    user_agent = "ai-search-cli/1.0"
     if contact:
         user_agent = f"{user_agent} (mailto:{contact})"
     return {"User-Agent": user_agent}, contact
