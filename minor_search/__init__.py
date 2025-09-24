@@ -1,5 +1,14 @@
 """Minor Search package."""
 
+from .crawler import (
+    CrawlJob,
+    CrawlState,
+    InMemoryJobQueue,
+    Master,
+    Scheduler,
+    Worker,
+    build_minio_storage_handler,
+)
 from .search import (
     AgentChunkResult,
     SearchChunk,
@@ -29,6 +38,13 @@ __all__ = [
     "SearchChunk",
     "SearchRunResult",
     "AgentChunkResult",
+    "CrawlJob",
+    "CrawlState",
+    "InMemoryJobQueue",
+    "Master",
+    "Scheduler",
+    "Worker",
+    "build_minio_storage_handler",
     "build_search_plan",
     "collect_agent_chunks",
     "run_search",

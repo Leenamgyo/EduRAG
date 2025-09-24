@@ -2,6 +2,17 @@
 
 Minor Search는 Tavily 검색과 Gemini 기반 관련 질의 생성을 조합해 교육·학습 도메인에 특화된 정보를 수집하는 프로젝트입니다. 실행 결과는 마크다운 요약과 함께 에이전트 친화적인 청크 리스트로 반환되며, MinIO에 저장해 Minor 에이전트에서 임베딩 파이프라인의 입력으로 사용할 수 있습니다.
 
+## 크롤링 아키텍처
+
+Minor Search의 수집기는 Scheduler-Queue-Master-Worker 패턴을 따르며, 확장성과 병렬성을 고려해 설계되었습니다.
+
+1. **Scheduler**: 수집을 시작할 씨앗(Seed) URL 목록을 생성해 Job Queue에 등록합니다. 예약된 스케줄에 따라 자동 실행되거나 필요할 때 수동으로 기동합니다.
+2. **Job Queue**: 크롤링해야 할 URL이 저장되는 중앙 대기열입니다. Redis의 `LIST` 구조나 AWS SQS로 구현할 수 있으며, Scheduler가 최초 URL을 넣고 Worker가 처리할 URL을 꺼내며, 처리 과정에서 발견한 신규 URL도 다시 큐에 추가합니다.
+3. **Master**: Worker 상태와 Job Queue 적재량을 모니터링합니다. Worker가 정상 동작하는지 확인하고 큐 상태에 따라 Worker 수를 조절하는 자동 확장(Auto Scaling)을 담당합니다.
+4. **Worker**: 실제 크롤링을 수행합니다. Job Queue에서 URL을 하나 꺼내 콘텐츠를 다운로드한 뒤, HTML은 파싱해 필요한 데이터와 추가 URL을 추출하고, PDF/이미지는 객체 저장소(S3/MinIO 등)에 업로드합니다. 추출한 텍스트 데이터는 최종 DB에 저장하며, 신규 URL은 다시 Job Queue에 넣습니다.
+
+이 구조를 통해 Worker들은 Job Queue가 비어 있을 때까지 URL을 반복 처리하고, Master는 상황에 맞춰 Worker 수를 조정해 처리량을 유지합니다.
+
 ## 요구 사항
 - [uv](https://github.com/astral-sh/uv) 0.5.0 이상
 - Python 3.11 이상
