@@ -101,3 +101,18 @@ Gemini 임베딩을 두 개 지정하면 Qdrant 컬렉션에 `primary`, `seconda
 에이전트가 수집한 청크는 `miner.docmodel.DocModel` 또는 `DocModel.to_document()` 를 통해 LangChain `Document` 객체로 변환해 추가 파이프라인에 활용할 수 있습니다.
 
 
+## Postgres 실행 기록 저장하기
+
+`MINER_DATABASE_URL` 환경 변수를 설정하면 Miner가 검색/에이전트 실행 기록과 크롤링된 청크 내용을 PostgreSQL에 자동으로 저장합니다.
+`psycopg` 드라이버가 사용되므로 표준 DSN 형식을 그대로 지정할 수 있습니다.
+
+```bash
+export MINER_DATABASE_URL="postgresql://user:password@localhost:5432/miner"
+```
+
+실행 시 생성되는 테이블은 다음과 같습니다.
+
+- `miner_runs`: 실행 모드, 기준 질의, 생성된 연관 질의, 실패 내역, 저장된 청크 수 등을 포함한 요약 정보.
+- `miner_crawled_chunks`: 각 실행에서 수집된 청크의 URL, 제목, 인덱스, 본문 내용을 저장.
+
+CLI 출력에는 저장이 성공했을 경우 실행 ID가 함께 노출되며, 해당 ID는 `miner_runs.id`와 동일합니다.
