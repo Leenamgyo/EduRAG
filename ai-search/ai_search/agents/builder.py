@@ -51,7 +51,7 @@ def build_agent(tools: Sequence):
         ("system", ANALYST_PROMPT),
         (
             "system",
-            "?�음?� ?�번 분석???�해 ?�전???�의??'분석 계획 초안'?�니?? �??�계??취�?�?충실??반영???�답?�세??\n{analysis_plan}",
+            "아래의 '분석 계획 초안'을 충실히 반영해 답변해 주세요.\n{analysis_plan}",
         ),
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "{input}"),
