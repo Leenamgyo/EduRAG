@@ -77,6 +77,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--search-query",
         help="Query string used when running in search mode.",
     )
+    parser.add_argument(
+        "--search-related-limit",
+        type=int,
+        default=int(os.getenv("MINER_SEARCH_RELATED_LIMIT", "5")),
+        help="Maximum number of AI-discovered related queries to follow up.",
+    )
+    parser.add_argument(
+        "--search-crawl-limit",
+        type=int,
+        default=int(os.getenv("MINER_SEARCH_CRAWL_LIMIT", "5")),
+        help="Maximum number of result URLs to crawl for content extraction.",
+    )
+    parser.add_argument(
+        "--search-results-per-query",
+        type=int,
+        default=int(os.getenv("MINER_SEARCH_RESULTS_PER_QUERY", "5")),
+        help="Maximum number of top results to keep for each search query.",
+    )
     return parser
 
 
@@ -87,8 +105,19 @@ def main(args: list[str] | None = None) -> None:
     if parsed.mode == "search":
         if not parsed.search_query:
             parser.error("--search-query is required when --mode=search")
+        if parsed.search_related_limit < 0:
+            parser.error("--search-related-limit must be non-negative")
+        if parsed.search_crawl_limit < 0:
+            parser.error("--search-crawl-limit must be non-negative")
+        if parsed.search_results_per_query <= 0:
+            parser.error("--search-results-per-query must be greater than zero")
         try:
-            results = run_search(parsed.search_query)
+            results = run_search(
+                parsed.search_query,
+                related_limit=parsed.search_related_limit,
+                crawl_limit=parsed.search_crawl_limit,
+                results_per_query=parsed.search_results_per_query,
+            )
         except ValueError as exc:
             parser.error(str(exc))
         print(results)
