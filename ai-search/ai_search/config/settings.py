@@ -19,6 +19,10 @@ class Settings:
     tavily_api_key: Optional[str]
     model_name: str
     reports_dir: Path
+    es_host: Optional[str]
+    es_username: Optional[str]
+    es_password: Optional[str]
+    es_index: str
 
 
 def load_settings() -> Settings:
@@ -33,6 +37,10 @@ def load_settings() -> Settings:
             or "gemini-2.0-flash-thinking-exp"
         ),
         reports_dir=Path(os.getenv("REPORTS_DIR", "reports")).resolve(),
+        es_host=os.getenv("ES_HOST"),
+        es_username=os.getenv("ES_USERNAME"),
+        es_password=os.getenv("ES_PASSWORD"),
+        es_index=os.getenv("ES_INDEX", "ai-search-reports"),
     )
 
 
