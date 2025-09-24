@@ -18,9 +18,10 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from .search import AgentChunkResult, SearchChunk, collect_agent_chunks
+from miner_core import log_agent_run
+from minor_search import AgentChunkResult, SearchChunk
+
 from .vector_db import create_client
-from .db import log_agent_run
 
 
 DEFAULT_EMBEDDING_MODEL = os.getenv(
@@ -199,15 +200,8 @@ def _upsert_chunks(
 
 
 def run_agent(
-    query: str,
+    chunk_result: AgentChunkResult,
     *,
-    tavily_client: "TavilyClient | None" = None,
-    related_limit: int = 5,
-    crawl_limit: int = 5,
-    results_per_query: int = 5,
-    ai_model: str | None = None,
-    ai_prompt: str | None = None,
-    chunk_size: int = 500,
     embedding_model: str | None = None,
     embedding_model_secondary: str | None = None,
     qdrant_host: str = "localhost",
@@ -218,21 +212,9 @@ def run_agent(
     on_disk: bool = False,
 ) -> AgentRunSummary:
     """Execute the Gemini agent workflow and persist chunk vectors."""
-
-    chunk_result: AgentChunkResult = collect_agent_chunks(
-        query,
-        client=tavily_client,
-        related_limit=related_limit,
-        crawl_limit=crawl_limit,
-        results_per_query=results_per_query,
-        ai_model=ai_model,
-        ai_prompt=ai_prompt,
-        chunk_size=chunk_size,
-    )
-
     if not chunk_result.chunks:
         summary = AgentRunSummary(
-            base_query=query,
+            base_query=chunk_result.base_query,
             related_queries=chunk_result.related_queries,
             stored_chunks=0,
             collection=collection,
@@ -296,12 +278,12 @@ def run_agent(
         collection,
         chunk_result.chunks,
         vectors_map,
-        base_query=query,
+        base_query=chunk_result.base_query,
         embedding_models=embedding_models,
     )
 
     summary = AgentRunSummary(
-        base_query=query,
+        base_query=chunk_result.base_query,
         related_queries=chunk_result.related_queries,
         stored_chunks=stored,
         collection=collection,

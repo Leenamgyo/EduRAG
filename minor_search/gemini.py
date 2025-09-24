@@ -61,6 +61,7 @@ def _build_related_prompt(
 ) -> str:
     template = (
         prompt_template
+        or os.getenv("MINOR_SEARCH_RELATED_PROMPT")
         or os.getenv("MINER_GEMINI_RELATED_PROMPT")
         or DEFAULT_RELATED_QUERY_PROMPT
     )
@@ -92,7 +93,12 @@ def generate_related_queries(
     if limit <= 0:
         return []
 
-    chosen_model = model or os.getenv("MINER_GEMINI_MODEL") or DEFAULT_MODEL
+    chosen_model = (
+        model
+        or os.getenv("MINOR_SEARCH_GEMINI_MODEL")
+        or os.getenv("MINER_GEMINI_MODEL")
+        or DEFAULT_MODEL
+    )
 
     try:
         _configure_client(api_key)

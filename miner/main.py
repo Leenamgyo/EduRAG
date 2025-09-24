@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from typing import Literal
 
 from qdrant_client.http import models as qmodels
 
 from agent import AgentConfigurationError, run_agent
-from search import run_search
+from minor_search import MinioSettings, create_minio_client, load_agent_chunks
 from vector_db import VectorCollectionConfig, create_client, ensure_collection
 
 DistanceLiteral = Literal["cosine", "dot", "euclid"]
@@ -20,11 +21,27 @@ DISTANCE_MAP: dict[DistanceLiteral, qmodels.Distance] = {
 }
 
 
+def _env_flag(name: str, *, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _configure_logging(debug: bool) -> None:
+    level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Miner: Qdrant vector database bootstrapper. "
-            "Ensures that a collection exists with the requested configuration."
+            "Miner: Qdrant vector database bootstrapper and embedding worker. "
+            "Ensures that a collection exists with the requested configuration "
+            "and ingests Minor Search results from MinIO."
         )
     )
     parser.add_argument(
@@ -67,51 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=["collection", "search", "agent"],
+        choices=["collection", "agent"],
         default="collection",
         help=(
             "Operation mode: 'collection' ensures the Qdrant collection exists, "
-            "'search' executes a Tavily web search plan, and 'agent' runs the "
-            "Gemini-powered ingestion agent."
+            "'agent' consumes Minor Search results from MinIO and stores embeddings."
         ),
-    )
-    parser.add_argument(
-        "--search-query",
-        help="Query string used when running in search or agent mode.",
-    )
-    parser.add_argument(
-        "--search-related-limit",
-        type=int,
-        default=int(os.getenv("MINER_SEARCH_RELATED_LIMIT", "5")),
-        help="Maximum number of AI-discovered related queries to follow up.",
-    )
-    parser.add_argument(
-        "--search-crawl-limit",
-        type=int,
-        default=int(os.getenv("MINER_SEARCH_CRAWL_LIMIT", "5")),
-        help="Maximum number of result URLs to crawl for content extraction.",
-    )
-    parser.add_argument(
-        "--search-results-per-query",
-        type=int,
-        default=int(os.getenv("MINER_SEARCH_RESULTS_PER_QUERY", "5")),
-        help="Maximum number of top results to keep for each search query.",
-    )
-    parser.add_argument(
-        "--search-ai-model",
-        default=os.getenv("MINER_SEARCH_AI_MODEL"),
-        help="Gemini model identifier used for related query expansion.",
-    )
-    parser.add_argument(
-        "--search-ai-prompt",
-        default=os.getenv("MINER_SEARCH_AI_PROMPT"),
-        help="Custom prompt template for Gemini related query generation.",
-    )
-    parser.add_argument(
-        "--search-chunk-size",
-        type=int,
-        default=int(os.getenv("MINER_SEARCH_CHUNK_SIZE", "500")),
-        help="Character count for each content chunk generated during crawling.",
     )
     parser.add_argument(
         "--agent-embedding-model",
@@ -123,6 +101,65 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("MINER_AGENT_EMBEDDING_MODEL_SECONDARY"),
         help="Optional secondary Gemini embedding model stored alongside the primary vectors.",
     )
+    default_debug = _env_flag("MINER_DEBUG", default=True)
+    parser.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        default=default_debug,
+        help="Enable verbose debug logging (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-debug",
+        dest="debug",
+        action="store_false",
+        help="Disable debug logging even if MINER_DEBUG is set.",
+    )
+
+    default_minio_secure = _env_flag("MINOR_SEARCH_MINIO_SECURE", default=False)
+    parser.add_argument(
+        "--minio-endpoint",
+        default=os.getenv("MINOR_SEARCH_MINIO_ENDPOINT", "localhost:9000"),
+        help="Endpoint for the MinIO server hosting search results.",
+    )
+    parser.add_argument(
+        "--minio-access-key",
+        default=os.getenv("MINOR_SEARCH_MINIO_ACCESS_KEY", "minioadmin"),
+        help="Access key for MinIO authentication.",
+    )
+    parser.add_argument(
+        "--minio-secret-key",
+        default=os.getenv("MINOR_SEARCH_MINIO_SECRET_KEY", "minioadmin"),
+        help="Secret key for MinIO authentication.",
+    )
+    parser.add_argument(
+        "--minio-bucket",
+        default=os.getenv("MINOR_SEARCH_MINIO_BUCKET", "minor-search"),
+        help="Bucket containing stored Minor Search results.",
+    )
+    parser.add_argument(
+        "--minio-region",
+        default=os.getenv("MINOR_SEARCH_MINIO_REGION"),
+        help="Optional MinIO/S3 region name.",
+    )
+    parser.add_argument(
+        "--minio-secure",
+        dest="minio_secure",
+        action="store_true",
+        default=default_minio_secure,
+        help="Use HTTPS when connecting to MinIO (default based on env).",
+    )
+    parser.add_argument(
+        "--minio-insecure",
+        dest="minio_secure",
+        action="store_false",
+        help="Force HTTP when connecting to MinIO.",
+    )
+    parser.add_argument(
+        "--search-object",
+        help="MinIO object key containing a stored Minor Search chunk result.",
+    )
+
     return parser
 
 
@@ -130,54 +167,30 @@ def main(args: list[str] | None = None) -> None:
     parser = build_parser()
     parsed = parser.parse_args(args=args)
 
-    if parsed.mode == "search":
-        if not parsed.search_query:
-            parser.error("--search-query is required when --mode=search")
-        if parsed.search_related_limit < 0:
-            parser.error("--search-related-limit must be non-negative")
-        if parsed.search_crawl_limit < 0:
-            parser.error("--search-crawl-limit must be non-negative")
-        if parsed.search_results_per_query <= 0:
-            parser.error("--search-results-per-query must be greater than zero")
-        if parsed.search_chunk_size <= 0:
-            parser.error("--search-chunk-size must be greater than zero")
-        try:
-            results = run_search(
-                parsed.search_query,
-                related_limit=parsed.search_related_limit,
-                crawl_limit=parsed.search_crawl_limit,
-                results_per_query=parsed.search_results_per_query,
-                ai_model=parsed.search_ai_model,
-                ai_prompt=parsed.search_ai_prompt,
-                chunk_size=parsed.search_chunk_size,
-            )
-        except ValueError as exc:
-            parser.error(str(exc))
-        print(results.to_markdown())
-        if results.run_id:
-            print(f"\n실행 로그 ID: {results.run_id}")
-        return
+    _configure_logging(parsed.debug)
 
     if parsed.mode == "agent":
-        if not parsed.search_query:
-            parser.error("--search-query is required when --mode=agent")
-        if parsed.search_related_limit < 0:
-            parser.error("--search-related-limit must be non-negative")
-        if parsed.search_crawl_limit < 0:
-            parser.error("--search-crawl-limit must be non-negative")
-        if parsed.search_results_per_query <= 0:
-            parser.error("--search-results-per-query must be greater than zero")
-        if parsed.search_chunk_size <= 0:
-            parser.error("--search-chunk-size must be greater than zero")
+        if not parsed.search_object:
+            parser.error("--search-object is required when --mode=agent")
+
+        settings = MinioSettings(
+            endpoint=parsed.minio_endpoint,
+            access_key=parsed.minio_access_key,
+            secret_key=parsed.minio_secret_key,
+            bucket=parsed.minio_bucket,
+            secure=parsed.minio_secure,
+            region=parsed.minio_region,
+        )
+        client = create_minio_client(settings)
+
+        try:
+            chunk_result = load_agent_chunks(client, settings, parsed.search_object)
+        except RuntimeError as exc:
+            parser.error(str(exc))
+
         try:
             summary = run_agent(
-                parsed.search_query,
-                related_limit=parsed.search_related_limit,
-                crawl_limit=parsed.search_crawl_limit,
-                results_per_query=parsed.search_results_per_query,
-                ai_model=parsed.search_ai_model,
-                ai_prompt=parsed.search_ai_prompt,
-                chunk_size=parsed.search_chunk_size,
+                chunk_result,
                 embedding_model=parsed.agent_embedding_model,
                 embedding_model_secondary=parsed.agent_embedding_model_secondary,
                 qdrant_host=parsed.host,
@@ -187,9 +200,11 @@ def main(args: list[str] | None = None) -> None:
                 distance=DISTANCE_MAP[parsed.distance],
                 on_disk=parsed.on_disk,
             )
-        except (ValueError, AgentConfigurationError) as exc:
+        except AgentConfigurationError as exc:
             parser.error(str(exc))
         print(summary.to_markdown())
+        if summary.run_id:
+            print(f"\n실행 로그 ID: {summary.run_id}")
         return
 
     client = create_client(parsed.host, parsed.port, parsed.api_key)
