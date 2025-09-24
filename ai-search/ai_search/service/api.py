@@ -53,7 +53,14 @@ def health_check() -> dict[str, str]:
 def run_query(payload: QuestionRequest) -> AnalysisResponse:
     """Execute the analysis pipeline for the supplied question."""
 
-    engine = AnalysisEngine()
+    try:
+        engine = AnalysisEngine()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except AnalysisError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - expose unexpected server errors
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     try:
         result = engine.run(payload.question)

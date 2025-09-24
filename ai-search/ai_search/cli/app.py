@@ -28,7 +28,14 @@ def run_cli(argv: list[str] | None = None) -> None:
         set_verbose(True)
         print("[안내] LangChain debug 모드가 활성화되었습니다.")
 
-    engine = AnalysisEngine()
+    try:
+        engine = AnalysisEngine()
+    except (ValueError, AnalysisError) as exc:
+        print(f"[오류] 분석 엔진을 초기화하지 못했습니다: {exc}")
+        return
+    except Exception as exc:  # noqa: BLE001 - expose unexpected failures gracefully
+        print(f"[오류] 예기치 못한 초기화 오류가 발생했습니다: {exc}")
+        return
 
     print("안녕하세요! AI 논문 분석 CLI입니다. 'exit' 을 입력하면 종료합니다.")
 
