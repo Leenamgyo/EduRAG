@@ -1,4 +1,4 @@
-[project]
+﻿[project]
 name = "ai-search-web"
 version = "0.1.0"
 description = "Streamlit UI for browsing ai-search reports"
