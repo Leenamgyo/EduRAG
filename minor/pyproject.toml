@@ -1,5 +1,5 @@
 ﻿[project]
-name = "miner"
+name = "minor"
 version = "0.1.0"
 description = "RAG repository scaffolding toolkit"
 readme = "README.md"

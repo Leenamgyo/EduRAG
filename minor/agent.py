@@ -1,4 +1,4 @@
-"""Gemini agent workflow for Miner.
+"""Gemini agent workflow for Minor.
 
 This module orchestrates a Gemini-powered agent that expands a user query,
 collects supporting documents, chunks them, embeds the chunks with one or more
@@ -18,14 +18,14 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from miner_core import log_agent_run
+from .logbook import log_agent_run
 from minor_search import AgentChunkResult, SearchChunk
 
 from .vector_db import create_client
 
 
 DEFAULT_EMBEDDING_MODEL = os.getenv(
-    "MINER_AGENT_EMBEDDING_MODEL",
+    "MINOR_AGENT_EMBEDDING_MODEL",
     "models/text-embedding-004",
 )
 
@@ -207,7 +207,7 @@ def run_agent(
     qdrant_host: str = "localhost",
     qdrant_port: int = 6333,
     qdrant_api_key: str | None = None,
-    collection: str = "miner-documents",
+    collection: str = "minor-documents",
     distance: qmodels.Distance = qmodels.Distance.COSINE,
     on_disk: bool = False,
 ) -> AgentRunSummary:

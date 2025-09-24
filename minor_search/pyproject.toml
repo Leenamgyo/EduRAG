@@ -1,7 +1,7 @@
 [project]
 name = "minor-search"
 version = "0.1.0"
-description = "Focused Tavily + Gemini search pipeline for Miner"
+description = "Focused Tavily + Gemini search pipeline for Minor"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

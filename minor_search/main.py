@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Minor Search: Tavily + Gemini powered research orchestrator. "
             "Runs focused searches, aggregates the results, and optionally "
-            "stores agent-ready chunks in MinIO for Miner to consume."
+            "stores agent-ready chunks in MinIO for Minor to consume."
         )
     )
     parser.add_argument("query", help="Seed query string that drives the search plan.")
