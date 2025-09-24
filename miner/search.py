@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import os
 import re
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Iterable, List, Sequence, TYPE_CHECKING
+from typing import Iterable, List, Sequence, Tuple, TYPE_CHECKING
 
-from .gemini import generate_related_queries as gemini_generate
+from gemini import generate_related_queries as gemini_generate
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from tavily import TavilyClient
@@ -32,6 +33,40 @@ class SearchRequest:
     label: str
     query: str
     options: dict[str, object]
+
+
+@dataclass(slots=True)
+class SearchHit:
+    """Single Tavily search hit captured for downstream processing."""
+
+    request_label: str
+    query: str
+    title: str
+    url: str
+    snippet: str
+    raw_snippet: str
+
+
+@dataclass(slots=True)
+class SearchChunk:
+    """Chunk of crawled content produced from a Tavily result."""
+
+    query: str
+    source_label: str
+    url: str
+    title: str
+    chunk_index: int
+    content: str
+
+
+@dataclass(slots=True)
+class AgentChunkResult:
+    """Structured output for agent-oriented crawling."""
+
+    base_query: str
+    related_queries: List[str]
+    chunks: List[SearchChunk]
+    failures: List[str]
 
 
 def _translate_query(query: str) -> str | None:
@@ -224,7 +259,7 @@ def _run_single_search(
     *,
     results_per_query: int,
     seen_urls: set[str],
-) -> tuple[str, List[str], List[str]]:
+) -> tuple[str, List[str], List[str], List[SearchHit]]:
     """Execute a search request and return Markdown plus new URLs and context."""
 
     options = dict(request.options)
@@ -232,7 +267,7 @@ def _run_single_search(
     try:
         response = client.search(query=request.query, **options)
     except Exception as exc:  # pragma: no cover - depends on external API.
-        return (f"### [{request.label}] 검색 실패\n- 오류: {exc}", [], [])
+        return (f"### [{request.label}] 검색 실패\n- 오류: {exc}", [], [], [])
 
     items = response.get("results", [])
     if not items:
@@ -240,11 +275,14 @@ def _run_single_search(
             f"### [{request.label}] 검색 결과 없음\n- 사용 쿼리: {request.query}",
             [],
             [],
+            [],
         )
 
     new_urls: List[str] = []
     lines: List[str] = []
     contexts: List[str] = []
+    hits: List[SearchHit] = []
+
     for item in items:
         url = item.get("url") or "URL 없음"
         title = item.get("title") or "제목 없음"
@@ -261,24 +299,35 @@ def _run_single_search(
         context_line = _normalize_text(f"{title} :: {snippet_source}")
         if context_line:
             contexts.append(context_line[:400])
+        hits.append(
+            SearchHit(
+                request_label=request.label,
+                query=request.query,
+                title=title,
+                url=url,
+                snippet=snippet,
+                raw_snippet=snippet_source,
+            )
+        )
         if len(lines) >= results_per_query:
             break
 
     body = "\n".join(lines) if lines else "- 신규 정보 없음"
     section = f"### [{request.label}] 검색 결과\n- 사용 쿼리: {request.query}\n{body}"
-    return section, new_urls, contexts
+    return section, new_urls, contexts, hits
 
 
-def _summarize_crawled_content(
+def _collect_crawled_chunks(
     client: "TavilyClient",
     urls: Sequence[str],
+    url_metadata: dict[str, dict[str, str]],
     *,
     chunk_size: int,
-) -> List[str]:
-    """Fetch and summarize page content for the selected URLs."""
+) -> Tuple[List[SearchChunk], List[str]]:
+    """Fetch page content for URLs and return structured chunks."""
 
     if not urls:
-        return []
+        return [], []
 
     try:
         response = client.extract(
@@ -288,32 +337,88 @@ def _summarize_crawled_content(
             timeout=90,
         )
     except Exception as exc:  # pragma: no cover - depends on external API.
-        return [f"- URL 크롤링 실패\n  - 오류: {exc}"]
+        return [], [f"크롤링 요청 실패: {exc}"]
 
-    summaries: List[str] = []
+    chunks: List[SearchChunk] = []
+    failures: List[str] = []
 
     for item in response.get("results", []):
         url = item.get("url") or "URL 없음"
-        title = item.get("title") or "제목 없음"
+        meta = url_metadata.get(url, {})
+        title = item.get("title") or meta.get("title") or "제목 없음"
         content = item.get("content") or ""
-        chunks = _chunk_text(content, chunk_size=chunk_size)
-        if chunks:
-            chunk_lines = [
-                f"  - 청크 {idx}: {chunk}"
-                for idx, chunk in enumerate(chunks, start=1)
-            ]
+        chunk_texts = _chunk_text(content, chunk_size=chunk_size)
+        if chunk_texts:
+            for idx, chunk_text in enumerate(chunk_texts, start=1):
+                chunks.append(
+                    SearchChunk(
+                        query=meta.get("query", ""),
+                        source_label=meta.get("label", ""),
+                        url=url,
+                        title=title,
+                        chunk_index=idx,
+                        content=chunk_text,
+                    )
+                )
         else:
-            chunk_lines = [f"  - 내용 요약: {_clean_snippet(content)}"]
-        summaries.append(
-            f"- **{title}**\n  - URL: {url}\n" + "\n".join(chunk_lines)
-        )
+            fallback = _clean_snippet(content)
+            chunks.append(
+                SearchChunk(
+                    query=meta.get("query", ""),
+                    source_label=meta.get("label", ""),
+                    url=url,
+                    title=title,
+                    chunk_index=1,
+                    content=fallback,
+                )
+            )
 
     for failed in response.get("failed_results", []):
         url = failed.get("url") or "URL 없음"
         error = failed.get("error") or "알 수 없는 오류"
-        summaries.append(f"- URL: {url}\n  - 오류: {error}")
+        failures.append(f"{url}: {error}")
 
-    return summaries
+    return chunks, failures
+
+
+def _summarize_crawled_content(
+    client: "TavilyClient",
+    urls: Sequence[str],
+    *,
+    chunk_size: int,
+    url_metadata: dict[str, dict[str, str]],
+) -> List[str]:
+    """Create Markdown summaries from crawled URL chunks."""
+
+    chunks, failures = _collect_crawled_chunks(
+        client,
+        urls,
+        url_metadata,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks and not failures:
+        return []
+
+    grouped: dict[str, List[SearchChunk]] = defaultdict(list)
+    for chunk in chunks:
+        grouped[chunk.url].append(chunk)
+
+    sections: List[str] = []
+    for url, chunk_list in grouped.items():
+        title = chunk_list[0].title
+        header = f"- **{title}**\n  - URL: {url}"
+        body_lines = [
+            f"  - 청크 {chunk.chunk_index}: {chunk.content}"
+            for chunk in chunk_list
+        ]
+        sections.append("\n".join(["### 크롤링된 문서 청크", header, *body_lines]))
+
+    if failures:
+        failure_lines = "\n".join(f"- {item}" for item in failures)
+        sections.append("### 크롤링 실패 목록\n" + failure_lines)
+
+    return sections
 
 
 def _merge_related_queries(
@@ -366,10 +471,11 @@ def run_search(
     sections: List[str] = []
     seen_urls: set[str] = set()
     urls_for_crawl: List[str] = []
+    url_metadata: dict[str, dict[str, str]] = {}
     context_samples: List[str] = []
 
     for request in build_search_plan(query):
-        section, new_urls, contexts = _run_single_search(
+        section, new_urls, contexts, hits = _run_single_search(
             client,
             request,
             results_per_query=results_per_query,
@@ -377,6 +483,14 @@ def run_search(
         )
         sections.append(section)
         context_samples.extend(contexts)
+        for hit in hits:
+            if hit.url == "URL 없음" or hit.url in url_metadata:
+                continue
+            url_metadata[hit.url] = {
+                "query": hit.query,
+                "label": request.label,
+                "title": hit.title,
+            }
         for url in new_urls:
             if len(urls_for_crawl) >= crawl_limit:
                 break
@@ -409,7 +523,7 @@ def run_search(
                 query=related_query,
                 options={"search_depth": "advanced"},
             )
-            section, new_urls, contexts = _run_single_search(
+            section, new_urls, contexts, hits = _run_single_search(
                 client,
                 request,
                 results_per_query=results_per_query,
@@ -417,6 +531,14 @@ def run_search(
             )
             sections.append(section)
             context_samples.extend(contexts)
+            for hit in hits:
+                if hit.url == "URL 없음" or hit.url in url_metadata:
+                    continue
+                url_metadata[hit.url] = {
+                    "query": hit.query,
+                    "label": request.label,
+                    "title": hit.title,
+                }
             for url in new_urls:
                 if len(urls_for_crawl) >= crawl_limit:
                     break
@@ -427,16 +549,126 @@ def run_search(
         client,
         urls_for_crawl[:crawl_limit],
         chunk_size=chunk_size,
+        url_metadata=url_metadata,
     )
     if crawl_sections:
-        sections.append("### 크롤링된 문서 청크" + "\n" + "\n".join(crawl_sections))
+        sections.extend(crawl_sections)
 
     return "\n\n".join(sections)
 
 
+def collect_agent_chunks(
+    query: str,
+    *,
+    client: "TavilyClient | None" = None,
+    related_limit: int = 5,
+    crawl_limit: int = 5,
+    results_per_query: int = 5,
+    ai_model: str | None = None,
+    chunk_size: int = 500,
+) -> AgentChunkResult:
+    """Gather chunked documents suitable for agent ingestion pipelines."""
+
+    api_key = os.getenv("TAVILY_API_KEY")
+    tavily_client = _resolve_client(api_key, client)
+
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
+
+    if ai_model is None:
+        ai_model = os.getenv("MINER_SEARCH_AI_MODEL") or os.getenv("MINER_GEMINI_MODEL")
+
+    seen_urls: set[str] = set()
+    urls_for_crawl: List[str] = []
+    url_metadata: dict[str, dict[str, str]] = {}
+    context_samples: List[str] = []
+
+    for request in build_search_plan(query):
+        _, new_urls, contexts, hits = _run_single_search(
+            tavily_client,
+            request,
+            results_per_query=results_per_query,
+            seen_urls=seen_urls,
+        )
+        context_samples.extend(contexts)
+        for hit in hits:
+            if hit.url == "URL 없음" or hit.url in url_metadata:
+                continue
+            url_metadata[hit.url] = {
+                "query": hit.query,
+                "label": request.label,
+                "title": hit.title,
+            }
+        for url in new_urls:
+            if len(urls_for_crawl) >= crawl_limit:
+                break
+            if url not in urls_for_crawl:
+                urls_for_crawl.append(url)
+
+    related_queries: List[str] = []
+    if related_limit > 0:
+        gemini_queries = gemini_generate(
+            query,
+            limit=related_limit,
+            model=ai_model,
+            context_samples=context_samples[: 3 * related_limit],
+        )
+        fallback_queries = discover_related_queries(query, tavily_client, limit=related_limit)
+        related_queries = _merge_related_queries(
+            query,
+            gemini_queries,
+            fallback_queries,
+            limit=related_limit,
+        )
+
+        for idx, related_query in enumerate(related_queries, start=1):
+            search_request = SearchRequest(
+                label=f"AI-{idx}",
+                query=related_query,
+                options={"search_depth": "advanced"},
+            )
+            _, new_urls, _, hits = _run_single_search(
+                tavily_client,
+                search_request,
+                results_per_query=results_per_query,
+                seen_urls=seen_urls,
+            )
+            for hit in hits:
+                if hit.url == "URL 없음" or hit.url in url_metadata:
+                    continue
+                url_metadata[hit.url] = {
+                    "query": hit.query,
+                    "label": search_request.label,
+                    "title": hit.title,
+                }
+            for url in new_urls:
+                if len(urls_for_crawl) >= crawl_limit:
+                    break
+                if url not in urls_for_crawl:
+                    urls_for_crawl.append(url)
+
+    chunks, failures = _collect_crawled_chunks(
+        tavily_client,
+        urls_for_crawl[:crawl_limit],
+        url_metadata,
+        chunk_size=chunk_size,
+    )
+
+    return AgentChunkResult(
+        base_query=query,
+        related_queries=related_queries,
+        chunks=chunks,
+        failures=failures,
+    )
+
+
 __all__: Iterable[str] = [
     "SearchRequest",
+    "SearchHit",
+    "SearchChunk",
+    "AgentChunkResult",
     "build_search_plan",
     "discover_related_queries",
     "run_search",
+    "collect_agent_chunks",
 ]
