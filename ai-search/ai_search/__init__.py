@@ -5,6 +5,7 @@ __all__ = [
     "cli",
     "config",
     "core",
+    "jobs",
     "service",
     "storage",
     "tools",
