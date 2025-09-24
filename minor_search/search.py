@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 
 from minor.logbook import log_search_run
+from langchain_core.tools import tool
 
 from .gemini import generate_related_queries as gemini_generate
 
@@ -623,6 +624,7 @@ def _render_plan_overview(
     return "\n".join(lines)
 
 
+@tool
 def run_search(
     query: str,
     *,
@@ -634,7 +636,24 @@ def run_search(
     ai_prompt: str | None = None,
     chunk_size: int = 500,
 ) -> SearchRunResult:
-    """Execute the Tavily search plan and return aggregated output."""
+    """실제 웹을 크롤링해 교육·학술 정보를 요약한 리포트를 반환합니다.
+
+    Args:
+        query: 검색을 시작할 한국어 또는 영어 질의.
+        client: 미리 생성한 TavilyClient 인스턴스. ``None``이면 환경 변수의
+            ``TAVILY_API_KEY``를 사용해 자동으로 생성합니다.
+        related_limit: Gemini를 통해 생성할 연관 검색어 개수. ``0``이면 생략합니다.
+        crawl_limit: 본문 크롤링 대상이 되는 최대 URL 수.
+        results_per_query: 각 검색 요청에서 수집할 결과 개수.
+        ai_model: Gemini 연관 검색에 사용할 모델 이름. ``None``이면 환경 변수에서
+            값을 찾습니다.
+        ai_prompt: Gemini 프롬프트 템플릿을 덮어쓸 때 사용합니다.
+        chunk_size: 본문 크롤링 시 청크로 나눌 최대 글자 수.
+
+    Returns:
+        ``SearchRunResult`` 객체로, Markdown 요약, 연관 검색어, 크롤링 청크 등
+        후속 작업에 필요한 모든 정보를 포함합니다.
+    """
 
     api_key = os.getenv("TAVILY_API_KEY")
     client = _resolve_client(api_key, client)
@@ -788,6 +807,7 @@ def run_search(
     return result
 
 
+@tool
 def collect_agent_chunks(
     query: str,
     *,
@@ -799,7 +819,22 @@ def collect_agent_chunks(
     ai_prompt: str | None = None,
     chunk_size: int = 500,
 ) -> AgentChunkResult:
-    """Gather chunked documents suitable for agent ingestion pipelines."""
+    """검색 결과를 크롤링한 뒤 에이전트용 문서 청크 세트를 생성합니다.
+
+    Args:
+        query: 토픽을 설명하는 질의 문자열.
+        client: Tavily 검색 클라이언트. ``None``이면 ``TAVILY_API_KEY``로 생성합니다.
+        related_limit: 추가로 확장 탐색할 연관 검색어 수.
+        crawl_limit: 실제로 본문을 수집할 최대 URL 수.
+        results_per_query: 각 검색 단계에서 유지할 검색 결과 개수.
+        ai_model: 연관 검색 생성에 사용할 Gemini 모델 이름.
+        ai_prompt: 연관 검색 프롬프트 템플릿 오버라이드 값.
+        chunk_size: 수집된 문서를 나눌 최대 청크 길이.
+
+    Returns:
+        ``AgentChunkResult`` 객체. URL별 청크 목록과 실패한 URL, 요약 Markdown 등을
+        담고 있어 RAG 파이프라인에 바로 투입할 수 있습니다.
+    """
 
     api_key = os.getenv("TAVILY_API_KEY")
     tavily_client = _resolve_client(api_key, client)
