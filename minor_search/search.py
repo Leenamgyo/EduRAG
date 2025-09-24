@@ -12,15 +12,16 @@ from __future__ import annotations
 import os
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, List, Sequence, Tuple, TYPE_CHECKING
 
-from uuid import UUID
+from uuid import UUID, uuid4
 from urllib.parse import urlparse
 
 
-from gemini import generate_related_queries as gemini_generate
-from .db import log_search_run
+from miner_core import log_search_run
+
+from .gemini import generate_related_queries as gemini_generate
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from tavily import TavilyClient
@@ -66,6 +67,27 @@ class SearchChunk:
     def doc_id(self) -> str:
         return f"{self.url}#chunk-{self.chunk_index}"
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "query": self.query,
+            "source_label": self.source_label,
+            "url": self.url,
+            "title": self.title,
+            "chunk_index": self.chunk_index,
+            "content": self.content,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SearchChunk":
+        return cls(
+            query=str(data["query"]),
+            source_label=str(data.get("source_label", "")),
+            url=str(data.get("url", "")),
+            title=str(data.get("title", "")),
+            chunk_index=int(data.get("chunk_index", 0)),
+            content=str(data.get("content", "")),
+        )
+
 
 _BLOCKED_CRAWL_DOMAINS: tuple[str, ...] = (
     "youtube.com",
@@ -109,6 +131,31 @@ class SearchRunResult:
     def __str__(self) -> str:  # pragma: no cover - convenience for CLI printing
         return self.markdown
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "base_query": self.base_query,
+            "sections": list(self.sections),
+            "markdown": self.markdown,
+            "related_queries": list(self.related_queries),
+            "chunks": [chunk.to_dict() for chunk in self.chunks],
+            "failures": list(self.failures),
+            "run_id": str(self.run_id) if self.run_id else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SearchRunResult":
+        run_id_value = data.get("run_id")
+        run_id = UUID(str(run_id_value)) if run_id_value else None
+        return cls(
+            base_query=str(data.get("base_query", "")),
+            sections=list(data.get("sections", [])),
+            markdown=str(data.get("markdown", "")),
+            related_queries=list(data.get("related_queries", [])),
+            chunks=[SearchChunk.from_dict(item) for item in data.get("chunks", [])],
+            failures=list(data.get("failures", [])),
+            run_id=run_id,
+        )
+
 
 @dataclass(slots=True)
 class AgentChunkResult:
@@ -118,16 +165,43 @@ class AgentChunkResult:
     related_queries: List[str]
     chunks: List[SearchChunk]
     failures: List[str]
+    object_id: UUID = field(default_factory=uuid4)
 
-    def to_docmodels(self) -> List["DocModel"]:
-        from .docmodel import DocModel
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "base_query": self.base_query,
+            "related_queries": list(self.related_queries),
+            "chunks": [chunk.to_dict() for chunk in self.chunks],
+            "failures": list(self.failures),
+            "object_id": str(self.object_id),
+        }
 
-        return [DocModel.from_chunk(chunk, base_query=self.base_query) for chunk in self.chunks]
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "AgentChunkResult":
+        object_id_raw = data.get("object_id")
+        object_id = UUID(str(object_id_raw)) if object_id_raw else uuid4()
+        return cls(
+            base_query=str(data.get("base_query", "")),
+            related_queries=list(data.get("related_queries", [])),
+            chunks=[SearchChunk.from_dict(item) for item in data.get("chunks", [])],
+            failures=list(data.get("failures", [])),
+            object_id=object_id,
+        )
 
-    def to_documents(self) -> List["Document"]:
-        from langchain.schema import Document
+    def default_object_name(self) -> str:
+        safe_query = re.sub(r"[^a-zA-Z0-9_-]+", "-", self.base_query).strip("-") or "search"
+        return f"search-results/{safe_query}-{self.object_id}.json"
 
-        return [doc.to_document() for doc in self.to_docmodels()]
+    @classmethod
+    def from_run_result(cls, result: SearchRunResult) -> "AgentChunkResult":
+        object_id = result.run_id or uuid4()
+        return cls(
+            base_query=result.base_query,
+            related_queries=result.related_queries,
+            chunks=result.chunks,
+            failures=result.failures,
+            object_id=object_id,
+        )
 
 
 def _translate_query(query: str) -> str | None:
@@ -518,7 +592,12 @@ def run_search(
         raise ValueError("chunk_size must be greater than zero")
 
     if ai_model is None:
-        ai_model = os.getenv("MINER_SEARCH_AI_MODEL") or os.getenv("MINER_GEMINI_MODEL")
+        ai_model = (
+            os.getenv("MINOR_SEARCH_AI_MODEL")
+            or os.getenv("MINOR_SEARCH_GEMINI_MODEL")
+            or os.getenv("MINER_SEARCH_AI_MODEL")
+            or os.getenv("MINER_GEMINI_MODEL")
+        )
 
     sections: List[str] = []
     seen_urls: set[str] = set()
@@ -668,7 +747,12 @@ def collect_agent_chunks(
         raise ValueError("chunk_size must be greater than zero")
 
     if ai_model is None:
-        ai_model = os.getenv("MINER_SEARCH_AI_MODEL") or os.getenv("MINER_GEMINI_MODEL")
+        ai_model = (
+            os.getenv("MINOR_SEARCH_AI_MODEL")
+            or os.getenv("MINOR_SEARCH_GEMINI_MODEL")
+            or os.getenv("MINER_SEARCH_AI_MODEL")
+            or os.getenv("MINER_GEMINI_MODEL")
+        )
 
     seen_urls: set[str] = set()
     urls_for_crawl: List[str] = []

@@ -13,26 +13,17 @@ Miner는 RAG(Retrieval-Augmented Generation) 저장소를 생성하기 위한 �
 uv run python -m miner.main --help
 ```
 
-### Tavily 기반 검색 모드 활용하기
+> 기본적으로 Miner CLI는 디버그 로그를 활성화합니다. `--no-debug` 옵션이나
+> `MINER_DEBUG=0` 환경 변수를 사용하면 비활성화할 수 있습니다.
 
-AI-SEARCH 프로젝트에서 사용하던 다국어 Tavily 검색 전략을 Miner에도 도입했습니다.
-`--mode search`와 `--search-query` 옵션을 사용하면 교육·학술 분야에 특화된 웹 검색을
-실행해 수집할 만한 문서를 빠르게 파악할 수 있습니다. 검색 결과는 중복 URL을 제거한
-마크다운 형식으로 출력됩니다.
+## Minor Search와의 연동
 
-```bash
-export TAVILY_API_KEY=...  # Tavily API 키 필요
+웹 검색 및 크롤링 파이프라인은 별도 프로젝트인 [Minor Search](../minor_search/README.md)로
+분리되었습니다. Minor Search는 Tavily + Gemini 조합으로 수집한 결과를 자동으로
+MinIO에 업로드하며, Miner 에이전트는 해당 객체를 불러와 임베딩 후 Qdrant에 저장합니다.
 
-uv run python -m miner.main \
-  --mode search \
-  --search-query "디지털 교육 정책 동향"
-```
-
-검색 모드는 Tavily API 사용량에 따라 비용이 발생할 수 있으며, `deep-translator`
-패키지가 설치되어 있다면 쿼리를 영어로 번역해 글로벌 검색도 함께 수행합니다.
-
-> 참고: 저작권 이슈를 피하기 위해 Tavily 검색 결과 중 `youtube.com`, `youtu.be` 등 유튜브
-> 도메인은 자동 크롤링 대상에서 제외됩니다.
+1. Minor Search 실행 후 출력에 표시된 `s3://버킷/객체` 값을 확인합니다.
+2. Miner 에이전트를 실행할 때 `--search-object` 옵션으로 해당 객체 키를 전달합니다.
 
 ## Qdrant 벡터 DB 실행하기
 Miner는 [Qdrant](https://qdrant.tech/)를 기본 벡터 데이터베이스로 사용합니다. 저장소 루트에 있는 `docker-compose.yml`을 사용하여 손쉽게 로컬 개발용 인스턴스를 실행할 수 있습니다.
@@ -57,28 +48,12 @@ uv run python -m miner.main \
 
 환경 변수 `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_API_KEY`를 사용하여 접속 정보를 구성할 수 있으며, `MINER_COLLECTION`, `MINER_VECTOR_SIZE`, `MINER_DISTANCE` 값으로 기본 설정을 재정의할 수 있습니다.
 
-### AI ?? ??? ?? ???
 
-Miner ?? ??? ?? Tavily ?? ??? ??? AI? ?? ???? ???? ?? ??? ???? ??????.
-?? ???? ?? ??? ??? ? ????.
-
-- `--search-related-limit`: ??? ??? ?? ??? ?? (?? 5?).
-- `--search-crawl-limit`: ???? URL ?? ?? (?? 5?).
-- `--search-results-per-query`: ? ???? ??? ?? ?? ?? (?? 5?).
-- `--search-ai-prompt`: Gemini? ??? ??? ???? ?? ?? ???? ?? ?????.
-
-```bash
-uv run python -m miner.main   --mode search   --search-query "?? ??? ????"   --search-related-limit 3   --search-crawl-limit 6
-```
-
-?? ?? ???? AI? ??? ?? ???? ???? ?? ??? ?? ???? ?? ??? ??? ?? ??????.
-Gemini ?? ?? ??? ??? ????? `GEMINI_API_KEY` ?? ??? ???? ???. ??? ????? `gemini-1.5-flash`?? `--search-ai-model` ?? `MINER_SEARCH_AI_MODEL` ??? ??? ? ????.
-`--search-ai-prompt` ?? `MINER_SEARCH_AI_PROMPT` ?? `MINER_GEMINI_RELATED_PROMPT` ?? ??? ??? ??? ??? ???? ?? ??? ??? ???.
-???? ??? ????? 500? ??? ???? `--search-chunk-size` ?? `MINER_SEARCH_CHUNK_SIZE` ?? ??? ??? ??? ? ????.
+Minor Search CLI에서 사용할 수 있는 세부 옵션과 예시는 해당 프로젝트의 README를 참고하세요.
 
 ### Gemini Agent 모드로 자동 수집
 
-`--mode agent` 를 사용하면 Gemini 에이전트가 기준 질의와 연관 질의를 생성하고 Tavily 검색 → 크롤링 → 500자 청킹 → 임베딩 → Qdrant 저장까지 자동으로 수행합니다.
+`--mode agent` 는 MinIO에 저장된 Minor Search 결과(JSON)를 불러와 임베딩을 생성하고 Qdrant에 저장합니다.
 
 ```bash
 export TAVILY_API_KEY=...
@@ -86,17 +61,20 @@ export GEMINI_API_KEY=...
 
 uv run python -m miner.main \
   --mode agent \
-  --search-query "스마트러닝 정책 동향" \
-  --search-related-limit 4 \
-  --search-crawl-limit 8 \
-  --search-results-per-query 5 \
+  --search-object search-results/스마트러닝-정책-동향-<UUID>.json \
   --agent-embedding-model models/text-embedding-004 \
   --agent-embedding-model-secondary models/text-embedding-003 \
   --collection edu-agent \
   --distance cosine
 ```
 
-Gemini 임베딩을 두 개 지정하면 Qdrant 컬렉션에 `primary`, `secondary` 벡터가 함께 저장됩니다. 초기 실행 시 컬렉션이 없으면 첫 실행에서 벡터 크기에 맞춰 자동 생성되며, 이미 존재하는 컬렉션과 벡터 크기가 다르면 에러가 발생합니다. 각 청크는 `doc_id`, `content`, `url`, `title`, `chunk_index`, `search_query`, `base_query` 메타데이터와 사용한 임베딩 모델 목록을 포함합니다.
+MinIO 연결 정보는 `MINOR_SEARCH_MINIO_*` 환경 변수 또는 CLI 옵션 (`--minio-endpoint`,
+`--minio-access-key`, `--minio-secret-key`, `--minio-bucket`, `--minio-region`,
+`--minio-secure`)으로 지정할 수 있습니다. Gemini 임베딩을 두 개 지정하면 Qdrant 컬렉션에
+`primary`, `secondary` 벡터가 함께 저장됩니다. 초기 실행 시 컬렉션이 없으면 첫 실행에서
+벡터 크기에 맞춰 자동 생성되며, 이미 존재하는 컬렉션과 벡터 크기가 다르면 에러가 발생합니다.
+각 청크는 `doc_id`, `content`, `url`, `title`, `chunk_index`, `search_query`, `base_query`
+메타데이터와 사용한 임베딩 모델 목록을 포함합니다.
 
 에이전트가 수집한 청크는 `miner.docmodel.DocModel` 또는 `DocModel.to_document()` 를 통해 LangChain `Document` 객체로 변환해 추가 파이프라인에 활용할 수 있습니다.
 

@@ -10,7 +10,7 @@ import psycopg
 from psycopg.types.json import Json
 
 if TYPE_CHECKING:  # pragma: no cover - imported only for typing
-    from .search import SearchChunk
+    from minor_search import SearchChunk
 
 
 _SCHEMA_PREPARED = False

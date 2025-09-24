@@ -8,7 +8,7 @@ from typing import Dict, Iterable, List, TYPE_CHECKING
 from langchain.schema import Document
 
 if TYPE_CHECKING:  # pragma: no cover - import only for type hints
-    from .search import SearchChunk
+    from minor_search import SearchChunk
 
 
 @dataclass(slots=True)
