@@ -4,6 +4,12 @@
 
 변경 로그 형식은 Keep a Changelog(https://keepachangelog.com/ko/1.1.0/)를 참고하며, 프로젝트는 Semantic Versioning(https://semver.org/lang/ko/)을 준수합니다.
 
+## [0.1.0] - 2025-09-24
+
+### 변경됨
+- Streamlit 웹 UI를 별도 프로젝트인 'ai-search-web'으로 분리하고 CLI 중심의 'ai-search' 패키지는 웹 의존성을 제거했습니다.
+
+
 ## [0.0.2] - 2025-09-23
 
 ### 변경됨

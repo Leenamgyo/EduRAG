@@ -7,7 +7,7 @@ import re
 
 import streamlit as st
 
-from ai_search.config.settings import settings
+from ai_search_web.settings import settings
 
 REPORTS_DIR = settings.reports_dir
 
