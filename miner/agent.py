@@ -12,6 +12,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Sequence, Tuple
+from uuid import UUID
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from qdrant_client import QdrantClient
@@ -19,6 +20,7 @@ from qdrant_client.http import models as qmodels
 
 from .search import AgentChunkResult, SearchChunk, collect_agent_chunks
 from .vector_db import create_client
+from .db import log_agent_run
 
 
 DEFAULT_EMBEDDING_MODEL = os.getenv(
@@ -41,6 +43,7 @@ class AgentRunSummary:
     collection: str
     embedding_models: Dict[str, str]
     failures: List[str]
+    run_id: UUID | None = None
 
     def to_markdown(self) -> str:
         """Render the summary in Markdown format for CLI output."""
@@ -60,8 +63,10 @@ class AgentRunSummary:
             if self.embedding_models
             else "- (none)"
         )
+        run_line = f"- 실행 ID: {self.run_id}\n" if self.run_id else ""
         return (
             f"### Gemini Agent 결과\n"
+            f"{run_line}"
             f"- 기준 질의: {self.base_query}\n"
             f"- 저장된 청크 수: {self.stored_chunks}\n"
             f"- 대상 컬렉션: {self.collection}\n"
@@ -224,7 +229,7 @@ def run_agent(
     )
 
     if not chunk_result.chunks:
-        return AgentRunSummary(
+        summary = AgentRunSummary(
             base_query=query,
             related_queries=chunk_result.related_queries,
             stored_chunks=0,
@@ -232,6 +237,18 @@ def run_agent(
             embedding_models={},
             failures=chunk_result.failures,
         )
+        run_id = log_agent_run(
+            base_query=summary.base_query,
+            summary_markdown=summary.to_markdown(),
+            related_queries=summary.related_queries,
+            failures=summary.failures,
+            chunks=chunk_result.chunks,
+            stored_chunks=summary.stored_chunks,
+            collection=summary.collection,
+            embedding_models=summary.embedding_models,
+        )
+        summary.run_id = run_id
+        return summary
 
     slots = _resolve_embedding_slots(embedding_model, embedding_model_secondary)
     embedding_models = {slot: name for slot, name in slots}
@@ -281,7 +298,7 @@ def run_agent(
         embedding_models=embedding_models,
     )
 
-    return AgentRunSummary(
+    summary = AgentRunSummary(
         base_query=query,
         related_queries=chunk_result.related_queries,
         stored_chunks=stored,
@@ -289,6 +306,20 @@ def run_agent(
         embedding_models=embedding_models,
         failures=chunk_result.failures,
     )
+
+    run_id = log_agent_run(
+        base_query=summary.base_query,
+        summary_markdown=summary.to_markdown(),
+        related_queries=summary.related_queries,
+        failures=summary.failures,
+        chunks=chunk_result.chunks,
+        stored_chunks=summary.stored_chunks,
+        collection=summary.collection,
+        embedding_models=summary.embedding_models,
+    )
+    summary.run_id = run_id
+
+    return summary
 
 
 __all__: Iterable[str] = ["run_agent", "AgentRunSummary", "AgentConfigurationError"]

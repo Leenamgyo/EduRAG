@@ -147,7 +147,9 @@ def main(args: list[str] | None = None) -> None:
             )
         except ValueError as exc:
             parser.error(str(exc))
-        print(results)
+        print(results.to_markdown())
+        if results.run_id:
+            print(f"\n실행 로그 ID: {results.run_id}")
         return
 
     if parsed.mode == "agent":
