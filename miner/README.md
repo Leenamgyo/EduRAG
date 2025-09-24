@@ -31,6 +31,9 @@ uv run python -m miner.main \
 검색 모드는 Tavily API 사용량에 따라 비용이 발생할 수 있으며, `deep-translator`
 패키지가 설치되어 있다면 쿼리를 영어로 번역해 글로벌 검색도 함께 수행합니다.
 
+> 참고: 저작권 이슈를 피하기 위해 Tavily 검색 결과 중 `youtube.com`, `youtu.be` 등 유튜브
+> 도메인은 자동 크롤링 대상에서 제외됩니다.
+
 ## Qdrant 벡터 DB 실행하기
 Miner는 [Qdrant](https://qdrant.tech/)를 기본 벡터 데이터베이스로 사용합니다. 저장소 루트에 있는 `docker-compose.yml`을 사용하여 손쉽게 로컬 개발용 인스턴스를 실행할 수 있습니다.
 
