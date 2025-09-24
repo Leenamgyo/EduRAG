@@ -5,11 +5,33 @@ Miner는 RAG(Retrieval-Augmented Generation) 저장소를 생성하기 위한 �
 ## 요구 사항
 - [uv](https://github.com/astral-sh/uv) 0.5.0 이상
 - Python 3.11 이상
+- [Docker](https://www.docker.com/) 및 Docker Compose
 
 ## 시작하기
 ```bash
 # 저장소 루트에서 의존성 설치 후 실행
-uv run python miner/main.py
+uv run python -m miner.main --help
 ```
 
-현재는 초기화 메시지를 출력하는 간단한 스켈레톤 상태이며, 추후 RAG 파이프라인을 구성하는 명령형 도구로 확장될 예정입니다.
+## Qdrant 벡터 DB 실행하기
+Miner는 [Qdrant](https://qdrant.tech/)를 기본 벡터 데이터베이스로 사용합니다. 저장소 루트에 있는 `docker-compose.yml`을 사용하여 손쉽게 로컬 개발용 인스턴스를 실행할 수 있습니다.
+
+```bash
+# Qdrant 컨테이너 실행
+docker compose up -d qdrant
+
+# 컨테이너 종료
+docker compose down
+```
+
+## 벡터 컬렉션 초기화
+벡터 데이터베이스가 실행 중이라면 다음 명령으로 기본 컬렉션을 생성하거나 존재 여부를 확인할 수 있습니다.
+
+```bash
+uv run python -m miner.main \
+  --collection miner-documents \
+  --vector-size 1536 \
+  --distance cosine
+```
+
+환경 변수 `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_API_KEY`를 사용하여 접속 정보를 구성할 수 있으며, `MINER_COLLECTION`, `MINER_VECTOR_SIZE`, `MINER_DISTANCE` 값으로 기본 설정을 재정의할 수 있습니다.
