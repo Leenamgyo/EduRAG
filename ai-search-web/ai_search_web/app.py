@@ -1,60 +1,41 @@
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
-from typing import List, Tuple
 import re
+from datetime import datetime
+from typing import Dict, List
 
 import streamlit as st
 
+from ai_search_web.elasticsearch_client import (
+    ElasticsearchConfigurationError,
+    get_client,
+)
 from ai_search_web.settings import settings
-
-REPORTS_DIR = settings.reports_dir
 
 
 @st.cache_data(ttl=60)
-def get_all_reports(directory: Path) -> List[dict]:
-    """Return metadata for every markdown report in the directory."""
-    if not directory.exists():
-        return []
+def fetch_reports() -> List[Dict[str, str]]:
+    """Retrieve saved reports from Elasticsearch."""
+    client = get_client()
+    response = client.search(
+        index=settings.es_index,
+        query={"match_all": {}},
+        sort=[{"created_at": {"order": "desc"}}],
+        size=200,
+    )
 
-    report_files: List[dict] = []
-    for filepath in sorted(directory.glob("*.md")):
-        try:
-            with filepath.open("r", encoding="utf-8") as handle:
-                first_line = handle.readline()
-                question = first_line.replace("# Áú¹®", "").strip()
-            mod_time = datetime.fromtimestamp(filepath.stat().st_mtime)
-            report_files.append(
-                {
-                    "filename": filepath.name,
-                    "question": question or "Á¦¸ñ ¾øÀ½",
-                    "date": mod_time.strftime("%Y-%m-%d %H:%M:%S"),
-                }
-            )
-        except Exception as exc:  # noqa: BLE001 - display failure in console
-            print(f"º¸°í¼­ ·Îµå ¿À·ù ({filepath.name}): {exc}")
-    return sorted(report_files, key=lambda item: item["date"], reverse=True)
-
-
-@st.cache_data
-def read_report_file(filename: str, directory: Path = REPORTS_DIR) -> Tuple[str, str]:
-    """Load an individual report and split question/content."""
-    filepath = directory / filename
-    try:
-        with filepath.open("r", encoding="utf-8") as handle:
-            full_content = handle.read()
-            parts = full_content.split("\n---\n", 1)
-            if len(parts) == 2:
-                question_part, content_part = parts
-                question = question_part.replace("# Áú¹®", "").strip()
-                content = content_part.replace("# ºĞ¼® ¸®Æ÷Æ®", "").strip()
-                return question, content
-            return "Áú¹® ¾øÀ½", full_content
-    except FileNotFoundError:
-        return "º¸°í¼­¸¦ Ã£À» ¼ö ¾ø½À´Ï´Ù.", ""
-    except Exception as exc:  # noqa: BLE001 - surface full error to UI
-        return f"º¸°í¼­ ·Îµù ¿À·ù: {exc}", ""
+    documents: List[Dict[str, str]] = []
+    for hit in response.get("hits", {}).get("hits", []):
+        source = hit.get("_source", {})
+        documents.append(
+            {
+                "id": hit.get("_id", ""),
+                "question": source.get("question", ""),
+                "content": source.get("content", ""),
+                "created_at": source.get("created_at", ""),
+            }
+        )
+    return documents
 
 
 def process_latex(text: str) -> str:
@@ -62,52 +43,104 @@ def process_latex(text: str) -> str:
     return re.sub(r"\\\\\[(.*?)\\\\\]", r"$$\\1$$", text, flags=re.DOTALL)
 
 
-st.set_page_config(page_title="ºĞ¼® ±âÈ¹¾È ºä¾î", layout="wide")
+def format_timestamp(timestamp: str) -> str:
+    """Convert an ISO timestamp into a readable string."""
+    if not timestamp:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(timestamp)
+    except ValueError:
+        try:
+            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return timestamp
+    return parsed.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def build_option_label(report: Dict[str, str], index: int) -> str:
+    """Create a select box label that remains unique."""
+    question = report.get("question") or f"ë³´ê³ ì„œ {index + 1}"
+    created_at = format_timestamp(report.get("created_at", ""))
+    identifier = report.get("id", "")[:8]
+
+    label = question
+    if created_at:
+        label = f"{label} ({created_at})"
+    if identifier:
+        label = f"{label} - {identifier}"
+    return label
+
+
+def render_sidebar(reports: List[Dict[str, str]]) -> Dict[str, str] | None:
+    """Render the sidebar and return the currently selected report."""
+    st.sidebar.header("ë³´ê³ ì„œ ëª©ë¡")
+
+    if not reports:
+        st.sidebar.info("ì €ì¥ëœ ë³´ê³ ì„œê°€ ì—†ìŠµë‹ˆë‹¤.")
+        return None
+
+    option_labels = [build_option_label(report, idx) for idx, report in enumerate(reports)]
+    selection = st.sidebar.selectbox("ë³´ê³ ì„œë¥¼ ì„ íƒí•˜ì„¸ìš”", option_labels, index=0)
+    selected_index = option_labels.index(selection)
+    selected_report = reports[selected_index]
+
+    question = selected_report.get("question", "")
+    created_at = format_timestamp(selected_report.get("created_at", ""))
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("ì„ íƒí•œ ë³´ê³ ì„œ")
+    st.sidebar.markdown(f"**ì§ˆë¬¸**: {question or 'ì œëª© ì—†ìŒ'}")
+    st.sidebar.markdown(f"**ID**: `{selected_report.get('id', '')}`")
+    if created_at:
+        st.sidebar.markdown(f"**ì‘ì„±ì¼**: {created_at}")
+
+    return selected_report
+
+
+st.set_page_config(page_title="ì—°êµ¬ ë³´ê³ ì„œ ë·°ì–´", layout="wide")
 st.markdown(
     """
     <style>
-    /* »ç¿ëÀÚ Á¤ÀÇ ½ºÅ¸ÀÏÀ» ¿©±â¿¡ Ãß°¡ÇÏ¼¼¿ä */
+    /* ì‚¬ìš©ì ì •ì˜ ìŠ¤íƒ€ì¼ì„ ì´ ì˜ì—­ì— ì¶”ê°€í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤. */
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.sidebar.header("¸®Æ÷Æ® ¸ñ·Ï ¿­¶÷")
-reports = get_all_reports(REPORTS_DIR)
+try:
+    reports = fetch_reports()
+except ElasticsearchConfigurationError as exc:
+    st.sidebar.error(str(exc))
+    reports = []
+except Exception as exc:  # noqa: BLE001 - surface the issue to the UI
+    st.sidebar.error(f"ë³´ê³ ì„œë¥¼ ë¶ˆëŸ¬ì˜¤ëŠ” ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤: {exc}")
+    reports = []
 
-if not reports:
-    st.sidebar.info("ÀúÀåµÈ ºĞ¼® ±âÈ¹¾ÈÀÌ ¾ø½À´Ï´Ù.")
-else:
-    report_options = {f"{item['question']} ({item['filename']})": item["filename"] for item in reports}
-    selected_key = st.sidebar.selectbox("¿­¶÷ÇÒ ¸®Æ÷Æ®¸¦ ¼±ÅÃÇÏ¼¼¿ä", list(report_options.keys()), index=0)
-    selected_filename = report_options[selected_key]
+selected_report = render_sidebar(reports)
 
-    question, content = read_report_file(selected_filename)
-    content = process_latex(content)
-    selected_report_info = next((item for item in reports if item["filename"] == selected_filename), None)
+if selected_report:
+    question = selected_report.get("question", "")
+    content = process_latex(selected_report.get("content", ""))
+    created_at = format_timestamp(selected_report.get("created_at", ""))
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("ÇöÀç ¿­¶÷ ÁßÀÎ ¸®Æ÷Æ®")
-    if selected_report_info:
-        st.sidebar.markdown(f"**{selected_report_info['question']}**")
-        st.sidebar.markdown(f"**ÆÄÀÏ¸í** `{selected_report_info['filename']}`")
-        st.sidebar.markdown(f"**ÀÛ¼ºÀÏ** {selected_report_info['date']}")
-
-    st.markdown("<div class='title'>ºĞ¼® ±âÈ¹¾È ºä¾î</div>", unsafe_allow_html=True)
+    st.markdown("<div class='title'>ì—°êµ¬ ë³´ê³ ì„œ</div>", unsafe_allow_html=True)
 
     with st.container():
         st.markdown(
             f"""
             <div class='card'>
-                <b>Áú¹®:</b> {question}<br/>
-                <b>ÀÛ¼ºÀÏ:</b> {selected_report_info['date'] if selected_report_info else '¾Ë ¼ö ¾øÀ½'}
+                <b>ì§ˆë¬¸:</b> {question}<br/>
+                <b>ì‘ì„±ì¼:</b> {created_at or 'ë¯¸ìƒ'}
             </div>
             """,
             unsafe_allow_html=True,
         )
 
     st.markdown("---")
-    st.subheader("»ó¼¼ ³»¿ë")
+    st.subheader("ê²°ê³¼")
 
     with st.container():
         st.markdown(f"<div class='card'>{content}</div>", unsafe_allow_html=True)
+else:
+    st.title("ì—°êµ¬ ë³´ê³ ì„œ")
+    st.info("ì™¼ìª½ì—ì„œ ë³´ê³ ì„œë¥¼ ì„ íƒí•˜ë©´ ìƒì„¸ ë‚´ìš©ì„ í™•ì¸í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.")
