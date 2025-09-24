@@ -17,4 +17,8 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "tavily-python>=0.7.12",
     "elasticsearch>=8.17.0",
+    "fastapi>=0.115.6",
+    "uvicorn>=0.34.0",
+    "pydantic>=2.10.5",
+    "requests>=2.32.3",
 ]
