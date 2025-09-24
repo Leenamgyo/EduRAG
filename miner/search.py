@@ -468,6 +468,7 @@ def run_search(
     crawl_limit: int = 5,
     results_per_query: int = 5,
     ai_model: str | None = None,
+    ai_prompt: str | None = None,
     chunk_size: int = 500,
 ) -> str:
     """Execute the Tavily search plan and return aggregated Markdown output."""
@@ -517,6 +518,7 @@ def run_search(
             limit=related_limit,
             model=ai_model,
             context_samples=context_samples[: 3 * related_limit],
+            prompt_template=ai_prompt,
         )
         fallback_queries = discover_related_queries(query, client, limit=related_limit)
         related_queries = _merge_related_queries(
@@ -578,6 +580,7 @@ def collect_agent_chunks(
     crawl_limit: int = 5,
     results_per_query: int = 5,
     ai_model: str | None = None,
+    ai_prompt: str | None = None,
     chunk_size: int = 500,
 ) -> AgentChunkResult:
     """Gather chunked documents suitable for agent ingestion pipelines."""
@@ -625,6 +628,7 @@ def collect_agent_chunks(
             limit=related_limit,
             model=ai_model,
             context_samples=context_samples[: 3 * related_limit],
+            prompt_template=ai_prompt,
         )
         fallback_queries = discover_related_queries(query, tavily_client, limit=related_limit)
         related_queries = _merge_related_queries(
