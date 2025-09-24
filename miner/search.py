@@ -15,7 +15,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Iterable, List, Sequence, Tuple, TYPE_CHECKING
 
+from uuid import UUID
+from urllib.parse import urlparse
+
+
 from gemini import generate_related_queries as gemini_generate
+from .db import log_search_run
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only
     from tavily import TavilyClient
@@ -60,6 +65,49 @@ class SearchChunk:
 
     def doc_id(self) -> str:
         return f"{self.url}#chunk-{self.chunk_index}"
+
+
+_BLOCKED_CRAWL_DOMAINS: tuple[str, ...] = (
+    "youtube.com",
+    "youtu.be",
+    "youtube-nocookie.com",
+)
+
+
+def _is_crawlable_url(url: str) -> bool:
+    """Return True when the URL should be crawled for content extraction."""
+
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:  # pragma: no cover - defensive, depends on stdlib internals.
+        return False
+
+    if not host:
+        return False
+
+    return not any(
+        host == blocked or host.endswith("." + blocked)
+        for blocked in _BLOCKED_CRAWL_DOMAINS
+    )
+
+
+@dataclass(slots=True)
+class SearchRunResult:
+    """Aggregated output returned by :func:`run_search`."""
+
+    base_query: str
+    sections: List[str]
+    markdown: str
+    related_queries: List[str]
+    chunks: List[SearchChunk]
+    failures: List[str]
+    run_id: UUID | None = None
+
+    def to_markdown(self) -> str:
+        return self.markdown
+
+    def __str__(self) -> str:  # pragma: no cover - convenience for CLI printing
+        return self.markdown
 
 
 @dataclass(slots=True)
@@ -394,21 +442,11 @@ def _collect_crawled_chunks(
     return chunks, failures
 
 
-def _summarize_crawled_content(
-    client: "TavilyClient",
-    urls: Sequence[str],
-    *,
-    chunk_size: int,
-    url_metadata: dict[str, dict[str, str]],
+def _render_crawled_sections(
+    chunks: Sequence[SearchChunk],
+    failures: Sequence[str],
 ) -> List[str]:
-    """Create Markdown summaries from crawled URL chunks."""
-
-    chunks, failures = _collect_crawled_chunks(
-        client,
-        urls,
-        url_metadata,
-        chunk_size=chunk_size,
-    )
+    """Render crawled chunks and failures into Markdown sections."""
 
     if not chunks and not failures:
         return []
@@ -468,9 +506,10 @@ def run_search(
     crawl_limit: int = 5,
     results_per_query: int = 5,
     ai_model: str | None = None,
+    ai_prompt: str | None = None,
     chunk_size: int = 500,
-) -> str:
-    """Execute the Tavily search plan and return aggregated Markdown output."""
+) -> SearchRunResult:
+    """Execute the Tavily search plan and return aggregated output."""
 
     api_key = os.getenv("TAVILY_API_KEY")
     client = _resolve_client(api_key, client)
@@ -486,6 +525,8 @@ def run_search(
     urls_for_crawl: List[str] = []
     url_metadata: dict[str, dict[str, str]] = {}
     context_samples: List[str] = []
+    collected_chunks: List[SearchChunk] = []
+    crawl_failures: List[str] = []
 
     for request in build_search_plan(query):
         section, new_urls, contexts, hits = _run_single_search(
@@ -497,7 +538,11 @@ def run_search(
         sections.append(section)
         context_samples.extend(contexts)
         for hit in hits:
-            if hit.url == "URL 없음" or hit.url in url_metadata:
+            if (
+                hit.url == "URL 없음"
+                or hit.url in url_metadata
+                or not _is_crawlable_url(hit.url)
+            ):
                 continue
             url_metadata[hit.url] = {
                 "query": hit.query,
@@ -507,6 +552,8 @@ def run_search(
         for url in new_urls:
             if len(urls_for_crawl) >= crawl_limit:
                 break
+            if not _is_crawlable_url(url):
+                continue
             if url not in urls_for_crawl:
                 urls_for_crawl.append(url)
 
@@ -517,6 +564,7 @@ def run_search(
             limit=related_limit,
             model=ai_model,
             context_samples=context_samples[: 3 * related_limit],
+            prompt_template=ai_prompt,
         )
         fallback_queries = discover_related_queries(query, client, limit=related_limit)
         related_queries = _merge_related_queries(
@@ -545,7 +593,11 @@ def run_search(
             sections.append(section)
             context_samples.extend(contexts)
             for hit in hits:
-                if hit.url == "URL 없음" or hit.url in url_metadata:
+                if (
+                    hit.url == "URL 없음"
+                    or hit.url in url_metadata
+                    or not _is_crawlable_url(hit.url)
+                ):
                     continue
                 url_metadata[hit.url] = {
                     "query": hit.query,
@@ -555,19 +607,45 @@ def run_search(
             for url in new_urls:
                 if len(urls_for_crawl) >= crawl_limit:
                     break
+                if not _is_crawlable_url(url):
+                    continue
                 if url not in urls_for_crawl:
                     urls_for_crawl.append(url)
 
-    crawl_sections = _summarize_crawled_content(
+    chunks, failures = _collect_crawled_chunks(
         client,
         urls_for_crawl[:crawl_limit],
+        url_metadata,
         chunk_size=chunk_size,
-        url_metadata=url_metadata,
     )
+    collected_chunks.extend(chunks)
+    crawl_failures.extend(failures)
+
+    crawl_sections = _render_crawled_sections(chunks, failures)
     if crawl_sections:
         sections.extend(crawl_sections)
 
-    return "\n\n".join(sections)
+    markdown = "\n\n".join(sections)
+
+    result = SearchRunResult(
+        base_query=query,
+        sections=sections,
+        markdown=markdown,
+        related_queries=related_queries,
+        chunks=collected_chunks,
+        failures=crawl_failures,
+    )
+
+    run_id = log_search_run(
+        base_query=result.base_query,
+        markdown=result.markdown,
+        related_queries=result.related_queries,
+        chunks=result.chunks,
+        failures=result.failures,
+    )
+    result.run_id = run_id
+
+    return result
 
 
 def collect_agent_chunks(
@@ -578,6 +656,7 @@ def collect_agent_chunks(
     crawl_limit: int = 5,
     results_per_query: int = 5,
     ai_model: str | None = None,
+    ai_prompt: str | None = None,
     chunk_size: int = 500,
 ) -> AgentChunkResult:
     """Gather chunked documents suitable for agent ingestion pipelines."""
@@ -605,7 +684,11 @@ def collect_agent_chunks(
         )
         context_samples.extend(contexts)
         for hit in hits:
-            if hit.url == "URL 없음" or hit.url in url_metadata:
+            if (
+                hit.url == "URL 없음"
+                or hit.url in url_metadata
+                or not _is_crawlable_url(hit.url)
+            ):
                 continue
             url_metadata[hit.url] = {
                 "query": hit.query,
@@ -615,6 +698,8 @@ def collect_agent_chunks(
         for url in new_urls:
             if len(urls_for_crawl) >= crawl_limit:
                 break
+            if not _is_crawlable_url(url):
+                continue
             if url not in urls_for_crawl:
                 urls_for_crawl.append(url)
 
@@ -625,6 +710,7 @@ def collect_agent_chunks(
             limit=related_limit,
             model=ai_model,
             context_samples=context_samples[: 3 * related_limit],
+            prompt_template=ai_prompt,
         )
         fallback_queries = discover_related_queries(query, tavily_client, limit=related_limit)
         related_queries = _merge_related_queries(
@@ -647,7 +733,11 @@ def collect_agent_chunks(
                 seen_urls=seen_urls,
             )
             for hit in hits:
-                if hit.url == "URL 없음" or hit.url in url_metadata:
+                if (
+                    hit.url == "URL 없음"
+                    or hit.url in url_metadata
+                    or not _is_crawlable_url(hit.url)
+                ):
                     continue
                 url_metadata[hit.url] = {
                     "query": hit.query,
@@ -657,6 +747,8 @@ def collect_agent_chunks(
             for url in new_urls:
                 if len(urls_for_crawl) >= crawl_limit:
                     break
+                if not _is_crawlable_url(url):
+                    continue
                 if url not in urls_for_crawl:
                     urls_for_crawl.append(url)
 
@@ -679,6 +771,7 @@ __all__: Iterable[str] = [
     "SearchRequest",
     "SearchHit",
     "SearchChunk",
+    "SearchRunResult",
     "AgentChunkResult",
     "build_search_plan",
     "discover_related_queries",
