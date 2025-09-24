@@ -14,6 +14,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Iterable, List, Sequence, Tuple, TYPE_CHECKING
+from urllib.parse import urlparse
 
 from gemini import generate_related_queries as gemini_generate
 
@@ -60,6 +61,30 @@ class SearchChunk:
 
     def doc_id(self) -> str:
         return f"{self.url}#chunk-{self.chunk_index}"
+
+
+_BLOCKED_CRAWL_DOMAINS: tuple[str, ...] = (
+    "youtube.com",
+    "youtu.be",
+    "youtube-nocookie.com",
+)
+
+
+def _is_crawlable_url(url: str) -> bool:
+    """Return True when the URL should be crawled for content extraction."""
+
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:  # pragma: no cover - defensive, depends on stdlib internals.
+        return False
+
+    if not host:
+        return False
+
+    return not any(
+        host == blocked or host.endswith("." + blocked)
+        for blocked in _BLOCKED_CRAWL_DOMAINS
+    )
 
 
 @dataclass(slots=True)
@@ -498,7 +523,11 @@ def run_search(
         sections.append(section)
         context_samples.extend(contexts)
         for hit in hits:
-            if hit.url == "URL 없음" or hit.url in url_metadata:
+            if (
+                hit.url == "URL 없음"
+                or hit.url in url_metadata
+                or not _is_crawlable_url(hit.url)
+            ):
                 continue
             url_metadata[hit.url] = {
                 "query": hit.query,
@@ -508,6 +537,8 @@ def run_search(
         for url in new_urls:
             if len(urls_for_crawl) >= crawl_limit:
                 break
+            if not _is_crawlable_url(url):
+                continue
             if url not in urls_for_crawl:
                 urls_for_crawl.append(url)
 
@@ -547,7 +578,11 @@ def run_search(
             sections.append(section)
             context_samples.extend(contexts)
             for hit in hits:
-                if hit.url == "URL 없음" or hit.url in url_metadata:
+                if (
+                    hit.url == "URL 없음"
+                    or hit.url in url_metadata
+                    or not _is_crawlable_url(hit.url)
+                ):
                     continue
                 url_metadata[hit.url] = {
                     "query": hit.query,
@@ -557,6 +592,8 @@ def run_search(
             for url in new_urls:
                 if len(urls_for_crawl) >= crawl_limit:
                     break
+                if not _is_crawlable_url(url):
+                    continue
                 if url not in urls_for_crawl:
                     urls_for_crawl.append(url)
 
@@ -608,7 +645,11 @@ def collect_agent_chunks(
         )
         context_samples.extend(contexts)
         for hit in hits:
-            if hit.url == "URL 없음" or hit.url in url_metadata:
+            if (
+                hit.url == "URL 없음"
+                or hit.url in url_metadata
+                or not _is_crawlable_url(hit.url)
+            ):
                 continue
             url_metadata[hit.url] = {
                 "query": hit.query,
@@ -618,6 +659,8 @@ def collect_agent_chunks(
         for url in new_urls:
             if len(urls_for_crawl) >= crawl_limit:
                 break
+            if not _is_crawlable_url(url):
+                continue
             if url not in urls_for_crawl:
                 urls_for_crawl.append(url)
 
@@ -651,7 +694,11 @@ def collect_agent_chunks(
                 seen_urls=seen_urls,
             )
             for hit in hits:
-                if hit.url == "URL 없음" or hit.url in url_metadata:
+                if (
+                    hit.url == "URL 없음"
+                    or hit.url in url_metadata
+                    or not _is_crawlable_url(hit.url)
+                ):
                     continue
                 url_metadata[hit.url] = {
                     "query": hit.query,
@@ -661,6 +708,8 @@ def collect_agent_chunks(
             for url in new_urls:
                 if len(urls_for_crawl) >= crawl_limit:
                     break
+                if not _is_crawlable_url(url):
+                    continue
                 if url not in urls_for_crawl:
                     urls_for_crawl.append(url)
 
