@@ -47,6 +47,15 @@ MinIO에 저장되는 객체는 JSON 포맷이며 다음 정보를 포함합니�
 
 이 JSON은 Minor 프로젝트의 `minor.main --mode agent` 명령에서 `--search-object` 옵션으로 불러와 임베딩 파이프라인을 실행할 수 있습니다.
 
+## 학술 논문 상위 인용 조회
+Minor Search에는 주어진 키워드로 상위 인용 논문을 찾는 도구가 포함되어 있습니다. OpenAlex API를 먼저 호출하고, 가능한 경우 Semantic Scholar 결과로 인용 수를 검증합니다.
+
+```bash
+uv run python -m minor_search.top_cited "generative ai education" --limit 5
+```
+
+출력은 마크다운 표 형식으로 제공되며, 제목, 연도, 인용 수, DOI/URL 정보를 확인할 수 있습니다. `--no-verify` 옵션을 사용하면 Semantic Scholar 검증 단계를 생략합니다.
+
 ## 디버그 모드
 기본적으로 Minor Search는 디버그 로그를 활성화합니다. `--no-debug` 옵션 또는 `MINOR_SEARCH_DEBUG=0` 환경 변수를 사용하여 비활성화할 수 있습니다.
 
