@@ -1,4 +1,4 @@
-﻿# Miner
+# Miner
 
 Miner는 RAG(Retrieval-Augmented Generation) 저장소를 생성하기 위한 실험용 프로젝트입니다. `uv`로 관리되는 Python 패키지로 시작되었으며, 앞으로 데이터 수집과 인덱싱, 프롬프트 템플릿 등을 구성하는 기능을 추가해 나갈 예정입니다.
 
@@ -73,9 +73,9 @@ Gemini ?? ?? ??? ??? ????? `GEMINI_API_KEY` ?? ??? ???? ???. ??? ????? `gemini-1
 
 ### Gemini Agent 모드로 자동 수집
 
---mode agent 를 사용하면 Gemini 에이전트가 기준 질의와 연관 질의를 생성하고 Tavily 검색→크롤링→500자 청킹→임베딩→Qdrant 저장까지 한 번에 수행합니다.
+`--mode agent` 를 사용하면 Gemini 에이전트가 기준 질의와 연관 질의를 생성하고 Tavily 검색 → 크롤링 → 500자 청킹 → 임베딩 → Qdrant 저장까지 자동으로 수행합니다.
 
-`ash
+```bash
 export TAVILY_API_KEY=...
 export GEMINI_API_KEY=...
 
@@ -86,9 +86,13 @@ uv run python -m miner.main \
   --search-crawl-limit 8 \
   --search-results-per-query 5 \
   --agent-embedding-model models/text-embedding-004 \
+  --agent-embedding-model-secondary models/text-embedding-003 \
   --collection edu-agent \
   --distance cosine
-`
+```
 
-초기 실행 시 컬렉션이 없으면 Gemini 임베딩 차원(기본 768)에 맞춰 자동으로 생성합니다. 이미 존재하는 컬렉션의 벡터 크기가 다르면 에러가 발생하므로 주의하세요. 각 청크는 content, url, 	itle, chunk_index, search_query, ase_query 메타데이터와 함께 저장됩니다.
+Gemini 임베딩을 두 개 지정하면 Qdrant 컬렉션에 `primary`, `secondary` 벡터가 함께 저장됩니다. 초기 실행 시 컬렉션이 없으면 첫 실행에서 벡터 크기에 맞춰 자동 생성되며, 이미 존재하는 컬렉션과 벡터 크기가 다르면 에러가 발생합니다. 각 청크는 `doc_id`, `content`, `url`, `title`, `chunk_index`, `search_query`, `base_query` 메타데이터와 사용한 임베딩 모델 목록을 포함합니다.
+
+에이전트가 수집한 청크는 `miner.docmodel.DocModel` 또는 `DocModel.to_document()` 를 통해 LangChain `Document` 객체로 변환해 추가 파이프라인에 활용할 수 있습니다.
+
 

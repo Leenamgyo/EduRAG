@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import os
@@ -111,7 +111,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--agent-embedding-model",
         default=os.getenv("MINER_AGENT_EMBEDDING_MODEL", "models/text-embedding-004"),
-        help="Gemini embedding model used when storing chunks in Qdrant.",
+        help="Primary Gemini embedding model used when storing chunks in Qdrant.",
+    )
+    parser.add_argument(
+        "--agent-embedding-model-secondary",
+        default=os.getenv("MINER_AGENT_EMBEDDING_MODEL_SECONDARY"),
+        help="Optional secondary Gemini embedding model stored alongside the primary vectors.",
     )
     return parser
 
@@ -165,6 +170,7 @@ def main(args: list[str] | None = None) -> None:
                 ai_model=parsed.search_ai_model,
                 chunk_size=parsed.search_chunk_size,
                 embedding_model=parsed.agent_embedding_model,
+                embedding_model_secondary=parsed.agent_embedding_model_secondary,
                 qdrant_host=parsed.host,
                 qdrant_port=parsed.port,
                 qdrant_api_key=parsed.api_key,

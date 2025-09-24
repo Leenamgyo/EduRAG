@@ -1,4 +1,4 @@
-﻿"""Search utilities for discovering new data sources.
+"""Search utilities for discovering new data sources.
 
 This module extends the original Tavily-powered search helpers so that Miner
 can operate as an "AI crawler". Given a seed query the crawler now discovers
@@ -58,6 +58,9 @@ class SearchChunk:
     chunk_index: int
     content: str
 
+    def doc_id(self) -> str:
+        return f"{self.url}#chunk-{self.chunk_index}"
+
 
 @dataclass(slots=True)
 class AgentChunkResult:
@@ -67,6 +70,16 @@ class AgentChunkResult:
     related_queries: List[str]
     chunks: List[SearchChunk]
     failures: List[str]
+
+    def to_docmodels(self) -> List["DocModel"]:
+        from .docmodel import DocModel
+
+        return [DocModel.from_chunk(chunk, base_query=self.base_query) for chunk in self.chunks]
+
+    def to_documents(self) -> List["Document"]:
+        from langchain.schema import Document
+
+        return [doc.to_document() for doc in self.to_docmodels()]
 
 
 def _translate_query(query: str) -> str | None:
@@ -672,3 +685,6 @@ __all__: Iterable[str] = [
     "run_search",
     "collect_agent_chunks",
 ]
+
+
+
